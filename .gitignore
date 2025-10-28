@@ -218,6 +218,7 @@ $RECYCLE.BIN/
 
 # Jupyter notebook checkpoints
 .ipynb_checkpoints/
+.ipynb
 
 # pytest
 .pytest_cache/

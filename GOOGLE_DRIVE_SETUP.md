@@ -30,8 +30,32 @@ pip install -r requirements.txt
 5. **Download credentials:**
    - Click the download button (⬇️) next to your new credential
    - Save the file as `credentials.json` in your project folder
+   - **Note:** You'll need to extract the client_id and client_secret from this file for the .env configuration
 
-## Step 3: First Run (Authentication)
+## Step 3: Configure Environment Variables
+
+1. **Copy the configuration template:**
+   ```bash
+   cp config.env .env
+   ```
+
+2. **Extract credentials from credentials.json:**
+   - Open `credentials.json` in a text editor
+   - Find the `client_id` and `client_secret` values
+   - Copy these values to your `.env` file
+
+3. **Edit your .env file:**
+   ```bash
+   # Replace these with your actual values from credentials.json
+   GOOGLE_CLIENT_ID=your_actual_client_id_here
+   GOOGLE_CLIENT_SECRET=your_actual_client_secret_here
+   GOOGLE_REDIRECT_URI=urn:ietf:wg:oauth:2.0:oob
+   
+   # Optional: Set a default Google Drive folder ID
+   # GOOGLE_DRIVE_FOLDER_ID=your_folder_id_here
+   ```
+
+## Step 4: First Run (Authentication)
 
 Run the scraper with upload enabled:
 
@@ -46,7 +70,7 @@ python ncaa_scraper.py --upload-gdrive --date 2025/10/21
 4. You'll see "Authentication successful" message
 5. A `token.pickle` file will be created (keep this file!)
 
-## Step 4: Usage Examples
+## Step 5: Usage Examples
 
 ### Basic scraping with upload:
 ```bash
@@ -68,7 +92,7 @@ python ncaa_scraper.py --upload-gdrive --gdrive-folder-id "1ABC123DEF456"
 python ncaa_scraper.py --backfill --upload-gdrive
 ```
 
-## Step 5: Find Your Google Drive Folder ID (Optional)
+## Step 6: Find Your Google Drive Folder ID (Optional)
 
 If you want to upload to a specific folder:
 
@@ -102,30 +126,37 @@ NCAA_Data/
 
 ## Troubleshooting
 
-### "credentials.json not found"
-- Make sure you downloaded the credentials file from Google Cloud Console
-- Rename it to exactly `credentials.json`
-- Place it in the same folder as your script
+### "Google Drive credentials not found in environment variables"
+- Make sure you created a `.env` file from `config.env`
+- Verify that `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are set in your `.env` file
+- Check that the values match those from your `credentials.json` file
+
+### "credentials.json not found" (Legacy)
+- This error should no longer appear with the new environment variable setup
+- If you see this, make sure you're using the updated version of the scraper
 
 ### "Authentication failed"
 - Delete `token.pickle` and try again
 - Make sure you granted all required permissions
+- Verify your environment variables are correct
 
 ### "Permission denied"
 - Check that the Google Drive API is enabled
-- Verify your credentials are correct
+- Verify your credentials are correct in the `.env` file
 
 ### Files not uploading
 - Check your internet connection
 - Verify the folder ID is correct (if using one)
 - Check the logs for specific error messages
+- Ensure your `.env` file is in the same directory as the script
 
 ## Security Notes
 
-- **Keep `credentials.json` and `token.pickle` secure**
-- **Don't commit these files to version control**
-- **The token.pickle file contains your access token**
+- **Keep your `.env` file secure** - it contains your Google OAuth2 credentials
+- **Don't commit `.env` or `credentials.json` to version control**
+- **The `token.pickle` file contains your access token**
 - **If compromised, revoke access in Google Cloud Console**
+- **The new environment variable approach is more secure than storing credentials in JSON files**
 
 ## Automation
 

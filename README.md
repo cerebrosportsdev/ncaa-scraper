@@ -6,7 +6,7 @@ An automated scraper for NCAA basketball box scores with Google Drive integratio
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/ncaa-basketball-scraper.git
+git clone https://github.com/biggame27/ncaa-basketball-scraper.git
 cd ncaa-basketball-scraper
 ```
 
@@ -26,7 +26,35 @@ pip install -r requirements.txt
 ```
 
 ### 3. Set Up Google Drive (Optional)
-Follow the instructions in `GOOGLE_DRIVE_SETUP.md` to enable automatic uploads.
+1. **Get Google Drive API Credentials:**
+   - Follow the instructions in `GOOGLE_DRIVE_SETUP.md` to get your credentials
+
+2. **Configure Environment Variables:**
+   
+   **Quick Setup:**
+   ```bash
+   python migrate_credentials.py
+   ```
+   This will prompt you for your Google OAuth2 credentials and create the `.env` file automatically.
+   
+   **Manual Setup (Alternative):**
+   ```bash
+   # Create .env file manually
+   echo "GOOGLE_CLIENT_ID=your_client_id_here" > .env
+   echo "GOOGLE_CLIENT_SECRET=your_client_secret_here" >> .env
+   echo "GOOGLE_REDIRECT_URI=urn:ietf:wg:oauth:2.0:oob" >> .env
+   ```
+   
+   **Required Environment Variables:**
+   ```bash
+   # Required for Google Drive integration
+   GOOGLE_CLIENT_ID=your_client_id_here
+   GOOGLE_CLIENT_SECRET=your_client_secret_here
+   GOOGLE_REDIRECT_URI=urn:ietf:wg:oauth:2.0:oob
+   
+   # Optional
+   GOOGLE_DRIVE_FOLDER_ID=your_folder_id_here
+   ```
 
 ### 4. Run the Scraper
 ```bash
@@ -88,6 +116,7 @@ scraped_data/
 ## 📋 Setup Files
 
 - `requirements.txt` - Python dependencies
+- `migrate_credentials.py` - Simple .env setup helper
 - `GOOGLE_DRIVE_SETUP.md` - Google Drive API setup guide
 - `ncaa_scraper.py` - Main scraper script
 - `run_scraper.py` - Simple runner script
@@ -104,7 +133,10 @@ scraped_data/
 
 - The scraper automatically skips days that already have data
 - Google Drive integration is optional but recommended for data backup
-- All sensitive files (credentials, tokens) are gitignored for security
+- Use `python migrate_credentials.py` for easy .env setup
+- Credentials are stored in environment variables (.env file) for better security
+- The .env file is gitignored to keep your credentials secure
+- Authentication tokens are stored in token.pickle for reuse
 
 ## 🐛 Troubleshooting
 

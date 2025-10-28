@@ -23,11 +23,16 @@ import argparse
 import logging
 import os
 import pickle
+import json
+from dotenv import load_dotenv
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
+
+# Load environment variables
+load_dotenv()
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -35,17 +40,29 @@ logger = logging.getLogger(__name__)
 
 # Google Drive API configuration
 SCOPES = ['https://www.googleapis.com/auth/drive.file']
-CREDENTIALS_FILE = 'credentials.json'
-TOKEN_FILE = 'token.pickle'
+
+# Get configuration from environment variables
+GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
+GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
+GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', 'urn:ietf:wg:oauth:2.0:oob')
+GOOGLE_DRIVE_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
+TOKEN_FILE = os.getenv('GOOGLE_TOKEN_FILE', 'token.pickle')
 
 def authenticate_google_drive():
     """
-    Authenticate with Google Drive API
+    Authenticate with Google Drive API using environment variables
     
     Returns:
         googleapiclient.discovery.Resource: Authenticated Google Drive service
     """
     creds = None
+    
+    # Check if required environment variables are set
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        logger.error("Google Drive credentials not found in environment variables!")
+        logger.error("Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in your .env file")
+        logger.error("See config.env for an example configuration")
+        return None
     
     # Load existing token if available
     if os.path.exists(TOKEN_FILE):
@@ -57,12 +74,18 @@ def authenticate_google_drive():
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            if not os.path.exists(CREDENTIALS_FILE):
-                logger.error(f"Google Drive credentials file '{CREDENTIALS_FILE}' not found!")
-                logger.error("Please download your credentials from Google Cloud Console and save as 'credentials.json'")
-                return None
+            # Create credentials from environment variables
+            client_config = {
+                "installed": {
+                    "client_id": GOOGLE_CLIENT_ID,
+                    "client_secret": GOOGLE_CLIENT_SECRET,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [GOOGLE_REDIRECT_URI]
+                }
+            }
             
-            flow = InstalledAppFlow.from_client_secrets_file(CREDENTIALS_FILE, SCOPES)
+            flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
             creds = flow.run_local_server(port=0)
         
         # Save credentials for next run
@@ -436,7 +459,7 @@ def main():
     parser.add_argument('--output-dir', type=str, default='scraped_data', help='Output directory for CSV files')
     parser.add_argument('--backfill', action='store_true', help='Run backfill for specific dates')
     parser.add_argument('--upload-gdrive', action='store_true', help='Upload scraped data to Google Drive')
-    parser.add_argument('--gdrive-folder-id', type=str, help='Google Drive folder ID to upload to (optional)')
+    parser.add_argument('--gdrive-folder-id', type=str, default=GOOGLE_DRIVE_FOLDER_ID, help='Google Drive folder ID to upload to (optional)')
     
     args = parser.parse_args()
     
