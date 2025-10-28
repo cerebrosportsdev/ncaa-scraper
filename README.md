@@ -54,6 +54,7 @@ pip install -r requirements.txt
    
    # Optional
    GOOGLE_DRIVE_FOLDER_ID=your_folder_id_here
+   DISCORD_WEBHOOK_URL=your_discord_webhook_url_here
    ```
 
 ### 4. Run the Scraper
@@ -133,10 +134,30 @@ scraped_data/
 
 - The scraper automatically skips days that already have data
 - Google Drive integration is optional but recommended for data backup
+- Discord notifications are optional but helpful for monitoring errors
 - Use `python migrate_credentials.py` for easy .env setup
 - Credentials are stored in environment variables (.env file) for better security
 - The .env file is gitignored to keep your credentials secure
 - Authentication tokens are stored in token.pickle for reuse
+
+## 🔔 Discord Notifications
+
+The scraper can send error notifications to Discord when issues occur:
+
+1. **Create a Discord Webhook:**
+   - Go to your Discord server settings
+   - Navigate to Integrations → Webhooks
+   - Create a new webhook and copy the URL
+
+2. **Add to .env file:**
+   ```bash
+   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your_webhook_url_here
+   ```
+
+3. **Notifications sent for:**
+   - 🚨 **ERROR**: Critical failures (page load errors, main function crashes)
+   - ⚠️ **WARNING**: 404 errors, missing pages, data issues
+   - ✅ **SUCCESS**: Scraping completion (optional)
 
 ## 🐛 Troubleshooting
 

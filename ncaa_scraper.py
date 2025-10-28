@@ -24,6 +24,7 @@ import logging
 import os
 import pickle
 import json
+import requests
 from dotenv import load_dotenv
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
@@ -47,6 +48,51 @@ GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
 GOOGLE_REDIRECT_URI = os.getenv('GOOGLE_REDIRECT_URI', 'urn:ietf:wg:oauth:2.0:oob')
 GOOGLE_DRIVE_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
 TOKEN_FILE = os.getenv('GOOGLE_TOKEN_FILE', 'token.pickle')
+DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL')
+
+def send_discord_notification(message, error_type="ERROR"):
+    """
+    Send a notification to Discord webhook
+    
+    Args:
+        message (str): Message to send
+        error_type (str): Type of notification (ERROR, WARNING, INFO)
+    """
+    if not DISCORD_WEBHOOK_URL:
+        logger.debug("Discord webhook URL not configured, skipping notification")
+        return
+    
+    try:
+        # Choose emoji based on error type
+        emoji_map = {
+            "ERROR": "🚨",
+            "WARNING": "⚠️", 
+            "INFO": "ℹ️",
+            "SUCCESS": "✅"
+        }
+        emoji = emoji_map.get(error_type, "📢")
+        
+        # Create Discord embed
+        embed = {
+            "title": f"{emoji} NCAA Scraper {error_type}",
+            "description": message,
+            "color": 0xff0000 if error_type == "ERROR" else 0xffaa00 if error_type == "WARNING" else 0x00ff00,
+            "timestamp": datetime.datetime.utcnow().isoformat(),
+            "footer": {
+                "text": "NCAA Basketball Scraper"
+            }
+        }
+        
+        payload = {
+            "embeds": [embed]
+        }
+        
+        response = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=10)
+        response.raise_for_status()
+        logger.debug(f"Discord notification sent successfully: {error_type}")
+        
+    except Exception as e:
+        logger.error(f"Failed to send Discord notification: {e}")
 
 def authenticate_google_drive():
     """
@@ -317,7 +363,9 @@ def get_box_scores(link, output_dir=".", upload_to_gdrive=False, gdrive_folder_i
         try:
             driver.get(link)
         except Exception as e:
-            logger.error(f"Failed to load scoreboard page {link}: {e}")
+            error_msg = f"Failed to load scoreboard page {link}: {e}"
+            logger.error(error_msg)
+            send_discord_notification(error_msg, "ERROR")
             return
         
         # Wait for the page to load and find game links
@@ -333,7 +381,9 @@ def get_box_scores(link, output_dir=".", upload_to_gdrive=False, gdrive_folder_i
                 # Check for the specific NCAA 404 error page
                 error_404 = driver.find_elements(By.CLASS_NAME, "error-404")
                 if error_404:
-                    logger.warning(f"Page not found (404) - 'That's a foul on us...' error for {link}")
+                    warning_msg = f"Page not found (404) - 'That's a foul on us...' error for {link}"
+                    logger.warning(warning_msg)
+                    send_discord_notification(warning_msg, "WARNING")
                     return
                 elif "404" in driver.title or "not found" in driver.title.lower():
                     logger.warning(f"Page not found (404) for {link}")
@@ -404,11 +454,7 @@ def get_box_scores(link, output_dir=".", upload_to_gdrive=False, gdrive_folder_i
                     logger.warning(f"Box score page may not exist or is not available for {box_score_link}: {e}")
                     # Check for common error indicators
                     try:
-                        # Check for the specific NCAA 404 error page
-                        error_404 = driver.find_elements(By.CLASS_NAME, "error-404")
-                        if error_404:
-                            logger.warning(f"Game page not found (404) - 'That's a foul on us...' error for {box_score_link}")
-                        elif "404" in driver.title or "not found" in driver.title.lower():
+                        if "404" in driver.title or "not found" in driver.title.lower():
                             logger.warning(f"Game page not found (404) for {box_score_link}")
                         elif "error" in driver.title.lower():
                             logger.warning(f"Error page detected for {box_score_link}")
@@ -616,7 +662,9 @@ def main():
         logger.info("Scraping completed!")
         
     except Exception as e:
-        logger.error(f"Unexpected error in main function: {e}")
+        error_msg = f"Unexpected error in main function: {e}"
+        logger.error(error_msg)
+        send_discord_notification(error_msg, "ERROR")
         raise
 
 if __name__ == "__main__":

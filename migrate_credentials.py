@@ -32,6 +32,9 @@ def create_env_file():
     # Optional folder ID
     folder_id = input("GOOGLE_DRIVE_FOLDER_ID (optional, press Enter to skip): ").strip()
     
+    # Optional Discord webhook
+    discord_webhook = input("DISCORD_WEBHOOK_URL (optional, press Enter to skip): ").strip()
+    
     # Create .env content
     env_content = f"""# Google Drive API Configuration
 GOOGLE_CLIENT_ID={client_id}
@@ -43,6 +46,11 @@ GOOGLE_REDIRECT_URI=urn:ietf:wg:oauth:2.0:oob
         env_content += f"GOOGLE_DRIVE_FOLDER_ID={folder_id}\n"
     else:
         env_content += "# GOOGLE_DRIVE_FOLDER_ID=your_folder_id_here\n"
+    
+    if discord_webhook:
+        env_content += f"DISCORD_WEBHOOK_URL={discord_webhook}\n"
+    else:
+        env_content += "# DISCORD_WEBHOOK_URL=your_discord_webhook_url_here\n"
     
     env_content += "\n# Optional: Custom token file path\n# GOOGLE_TOKEN_FILE=token.pickle\n"
     
