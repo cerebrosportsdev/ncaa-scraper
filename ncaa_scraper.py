@@ -313,18 +313,48 @@ def get_box_scores(link, output_dir=".", upload_to_gdrive=False, gdrive_folder_i
     try:
         # Navigate to the scoreboard page with Selenium to handle dynamic content
         logger.info(f"Loading scoreboard page: {link}")
-        driver.get(link)
+        
+        try:
+            driver.get(link)
+        except Exception as e:
+            logger.error(f"Failed to load scoreboard page {link}: {e}")
+            return
         
         # Wait for the page to load and find game links
-        wait = WebDriverWait(driver, 10)
-        wait.until(EC.presence_of_element_located((By.CLASS_NAME, "gamePod-link")))
+        wait = WebDriverWait(driver, 15)
+        
+        try:
+            # Check if page loaded successfully by looking for common elements
+            wait.until(EC.presence_of_element_located((By.CLASS_NAME, "gamePod-link")))
+        except Exception as e:
+            logger.warning(f"Scoreboard page may not exist or has no games for {link}: {e}")
+            # Check for specific 404 error page
+            try:
+                # Check for the specific NCAA 404 error page
+                error_404 = driver.find_elements(By.CLASS_NAME, "error-404")
+                if error_404:
+                    logger.warning(f"Page not found (404) - 'That's a foul on us...' error for {link}")
+                    return
+                elif "404" in driver.title or "not found" in driver.title.lower():
+                    logger.warning(f"Page not found (404) for {link}")
+                elif "error" in driver.title.lower():
+                    logger.warning(f"Error page detected for {link}")
+                else:
+                    logger.warning(f"No games found on scoreboard page: {link}")
+            except:
+                logger.warning(f"Could not determine page status for {link}")
+            return
         
         # Find all game links
-        box_scores = driver.find_elements(By.CLASS_NAME, "gamePod-link")
-        box_score_links = [box_score.get_attribute('href') for box_score in box_scores]
+        try:
+            box_scores = driver.find_elements(By.CLASS_NAME, "gamePod-link")
+            box_score_links = [box_score.get_attribute('href') for box_score in box_scores if box_score.get_attribute('href')]
+        except Exception as e:
+            logger.error(f"Error finding game links on {link}: {e}")
+            return
         
         if not box_score_links:
-            logger.warning(f"No games found for {link}")
+            logger.warning(f"No valid game links found for {link}")
             return
         
         # Filter out already visited links
@@ -363,57 +393,124 @@ def get_box_scores(link, output_dir=".", upload_to_gdrive=False, gdrive_folder_i
                 continue
             
             # Wait for the page to load completely
-            wait = WebDriverWait(driver, 10)
+            wait = WebDriverWait(driver, 15)
             
             try:
-                # Wait for the team selector to be present
-                team_selector = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "boxscore-team-selector")))
-                child_divs = team_selector.find_elements(By.TAG_NAME, "div")
-                
-                if len(child_divs) < 2:
-                    logger.warning(f"Not enough team elements found for {box_score_link}")
+                # Check if game page loaded successfully
+                try:
+                    # Wait for the team selector to be present
+                    team_selector = wait.until(EC.presence_of_element_located((By.CLASS_NAME, "boxscore-team-selector")))
+                except Exception as e:
+                    logger.warning(f"Box score page may not exist or is not available for {box_score_link}: {e}")
+                    # Check for common error indicators
+                    try:
+                        # Check for the specific NCAA 404 error page
+                        error_404 = driver.find_elements(By.CLASS_NAME, "error-404")
+                        if error_404:
+                            logger.warning(f"Game page not found (404) - 'That's a foul on us...' error for {box_score_link}")
+                        elif "404" in driver.title or "not found" in driver.title.lower():
+                            logger.warning(f"Game page not found (404) for {box_score_link}")
+                        elif "error" in driver.title.lower():
+                            logger.warning(f"Error page detected for {box_score_link}")
+                        elif "unavailable" in driver.page_source.lower():
+                            logger.warning(f"Game data unavailable for {box_score_link}")
+                        else:
+                            logger.warning(f"Box score elements not found for {box_score_link}")
+                    except:
+                        logger.warning(f"Could not determine game page status for {box_score_link}")
                     continue
+                
+                # Get team selector elements
+                try:
+                    child_divs = team_selector.find_elements(By.TAG_NAME, "div")
                     
-                child_divs_text = [div.text for div in child_divs]
-                # game_id already extracted above
+                    if len(child_divs) < 2:
+                        logger.warning(f"Not enough team elements found for {box_score_link}")
+                        continue
+                        
+                    child_divs_text = [div.text.strip() for div in child_divs if div.text.strip()]
+                    
+                    if len(child_divs_text) < 2:
+                        logger.warning(f"Not enough team names found for {box_score_link}")
+                        continue
+                        
+                except Exception as e:
+                    logger.error(f"Error extracting team information from {box_score_link}: {e}")
+                    continue
 
                 # Wait for the boxscore table to be present
-                boxscore_table = wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'gamecenter-tab-boxscore')))
-                table = boxscore_table.find_element(By.TAG_NAME, 'table')
+                try:
+                    boxscore_table = wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'gamecenter-tab-boxscore')))
+                    table = boxscore_table.find_element(By.TAG_NAME, 'table')
+                except Exception as e:
+                    logger.warning(f"Box score table not found for {box_score_link}: {e}")
+                    continue
 
-                df_team_one = pd.read_html(StringIO(table.get_attribute('outerHTML')))[0]
-
-                df_team_one['TEAM'] = child_divs_text[0]
-                df_team_one['OPP'] = child_divs_text[1]
-                df_team_one['GAMEID'] = game_id
-                df_team_one['GAMELINK'] = box_score_link
-                df_team_one = df_team_one.iloc[:-2]  # Remove last 2 rows
+                # Parse first team's data
+                try:
+                    df_team_one = pd.read_html(StringIO(table.get_attribute('outerHTML')))[0]
+                    
+                    if df_team_one.empty:
+                        logger.warning(f"Empty box score data for first team in {box_score_link}")
+                        continue
+                    
+                    df_team_one['TEAM'] = child_divs_text[0]
+                    df_team_one['OPP'] = child_divs_text[1]
+                    df_team_one['GAMEID'] = game_id
+                    df_team_one['GAMELINK'] = box_score_link
+                    df_team_one = df_team_one.iloc[:-2]  # Remove last 2 rows
+                    
+                except Exception as e:
+                    logger.error(f"Error parsing first team data from {box_score_link}: {e}")
+                    continue
                 
                 # Click to switch to second team
-                child_divs[1].click()
-                time.sleep(2)  # Wait for the switch
+                try:
+                    child_divs[1].click()
+                    time.sleep(2)  # Wait for the switch
+                except Exception as e:
+                    logger.warning(f"Could not switch to second team for {box_score_link}: {e}")
+                    continue
 
                 # Get the second team's data
-                table = boxscore_table.find_element(By.TAG_NAME, 'table')
-                df_team_two = pd.read_html(StringIO(table.get_attribute('outerHTML')))[0]
-
-                df_team_two['TEAM'] = child_divs_text[1]
-                df_team_two['OPP'] = child_divs_text[0]
-                df_team_two['GAMEID'] = game_id
-                df_team_two['GAMELINK'] = box_score_link
-                df_team_two = df_team_two.iloc[:-2]  # Remove last 2 rows
+                try:
+                    table = boxscore_table.find_element(By.TAG_NAME, 'table')
+                    df_team_two = pd.read_html(StringIO(table.get_attribute('outerHTML')))[0]
+                    
+                    if df_team_two.empty:
+                        logger.warning(f"Empty box score data for second team in {box_score_link}")
+                        continue
+                    
+                    df_team_two['TEAM'] = child_divs_text[1]
+                    df_team_two['OPP'] = child_divs_text[0]
+                    df_team_two['GAMEID'] = game_id
+                    df_team_two['GAMELINK'] = box_score_link
+                    df_team_two = df_team_two.iloc[:-2]  # Remove last 2 rows
+                    
+                except Exception as e:
+                    logger.error(f"Error parsing second team data from {box_score_link}: {e}")
+                    continue
 
                 # Combine both teams into one dataframe
-                combined_df = pd.concat([df_team_one, df_team_two], ignore_index=True)
-                
-                # Write to CSV (create file if it doesn't exist, append if it does)
-                file_exists = os.path.exists(csv_name)
-                combined_df.to_csv(csv_name, index=False, header=not file_exists, mode='a')
-                
-                logger.info(f"Successfully saved {len(combined_df)} rows to: {csv_name}")
+                try:
+                    combined_df = pd.concat([df_team_one, df_team_two], ignore_index=True)
+                    
+                    if combined_df.empty:
+                        logger.warning(f"Combined data is empty for {box_score_link}")
+                        continue
+                    
+                    # Write to CSV (create file if it doesn't exist, append if it does)
+                    file_exists = os.path.exists(csv_name)
+                    combined_df.to_csv(csv_name, index=False, header=not file_exists, mode='a')
+                    
+                    logger.info(f"Successfully saved {len(combined_df)} rows to: {csv_name}")
+                    
+                except Exception as e:
+                    logger.error(f"Error saving data for {box_score_link}: {e}")
+                    continue
                 
             except Exception as e:
-                logger.error(f"Error processing {box_score_link}: {e}")
+                logger.error(f"Unexpected error processing {box_score_link}: {e}")
                 continue
         
         # Upload the complete CSV file to Google Drive after all games are processed
@@ -439,19 +536,31 @@ def get_date_links(date_str=None):
     Returns:
         list: List of scoreboard URLs
     """
-    if date_str is None:
-        yesterday = datetime.date.today() - timedelta(days=1)
-        date_str = yesterday.strftime('%Y/%m/%d')
-    
-    links = [
-        # f"https://www.ncaa.com/scoreboard/basketball-men/d1/{date_str}/all-conf",
-        # f"https://www.ncaa.com/scoreboard/basketball-men/d2/{date_str}/all-conf",
-        # f"https://www.ncaa.com/scoreboard/basketball-men/d3/{date_str}/all-conf",
-        # f"https://www.ncaa.com/scoreboard/basketball-women/d1/{date_str}/all-conf",
-        # f"https://www.ncaa.com/scoreboard/basketball-women/d2/{date_str}/all-conf",
-        f"https://www.ncaa.com/scoreboard/basketball-women/d3/{date_str}/all-conf"
-    ]
-    return links
+    try:
+        if date_str is None:
+            yesterday = datetime.date.today() - timedelta(days=1)
+            date_str = yesterday.strftime('%Y/%m/%d')
+        
+        # Validate date format
+        try:
+            datetime.datetime.strptime(date_str, '%Y/%m/%d')
+        except ValueError:
+            logger.error(f"Invalid date format: {date_str}. Expected YYYY/MM/DD")
+            return []
+        
+        links = [
+            # f"https://www.ncaa.com/scoreboard/basketball-men/d1/{date_str}/all-conf",
+            # f"https://www.ncaa.com/scoreboard/basketball-men/d2/{date_str}/all-conf",
+            # f"https://www.ncaa.com/scoreboard/basketball-men/d3/{date_str}/all-conf",
+            # f"https://www.ncaa.com/scoreboard/basketball-women/d1/{date_str}/all-conf",
+            # f"https://www.ncaa.com/scoreboard/basketball-women/d2/{date_str}/all-conf",
+            f"https://www.ncaa.com/scoreboard/basketball-women/d3/{date_str}/all-conf"
+        ]
+        return links
+        
+    except Exception as e:
+        logger.error(f"Error generating date links: {e}")
+        return []
 
 def main():
     parser = argparse.ArgumentParser(description='NCAA Box Score Scraper')
@@ -470,24 +579,45 @@ def main():
     # Create a set to track visited links across all scraping operations
     visited_links = set()
     
-    if args.backfill:
-        # Backfill specific dates
-        backfill_dates = [
-            "2025/01/12"
-        ]
-        
-        for date in backfill_dates:
-            logger.info(f"Backfilling data for {date}")
-            links = get_date_links(date)
+    try:
+        if args.backfill:
+            # Backfill specific dates
+            backfill_dates = [
+                "2025/01/12"
+            ]
+            
+            for date in backfill_dates:
+                logger.info(f"Backfilling data for {date}")
+                links = get_date_links(date)
+                if not links:
+                    logger.error(f"No valid links generated for date {date}")
+                    continue
+                    
+                for link in links:
+                    try:
+                        get_box_scores(link, args.output_dir, args.upload_gdrive, args.gdrive_folder_id, visited_links)
+                    except Exception as e:
+                        logger.error(f"Error processing backfill link {link}: {e}")
+                        continue
+        else:
+            # Regular scraping for specified date or yesterday
+            links = get_date_links(args.date)
+            if not links:
+                logger.error("No valid links generated for the specified date")
+                return
+                
             for link in links:
-                get_box_scores(link, args.output_dir, args.upload_gdrive, args.gdrive_folder_id, visited_links)
-    else:
-        # Regular scraping for specified date or yesterday
-        links = get_date_links(args.date)
-        for link in links:
-            get_box_scores(link, args.output_dir, args.upload_gdrive, args.gdrive_folder_id, visited_links)
-    
-    logger.info("Scraping completed!")
+                try:
+                    get_box_scores(link, args.output_dir, args.upload_gdrive, args.gdrive_folder_id, visited_links)
+                except Exception as e:
+                    logger.error(f"Error processing link {link}: {e}")
+                    continue
+        
+        logger.info("Scraping completed!")
+        
+    except Exception as e:
+        logger.error(f"Unexpected error in main function: {e}")
+        raise
 
 if __name__ == "__main__":
     main()
