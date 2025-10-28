@@ -50,13 +50,17 @@ GOOGLE_DRIVE_FOLDER_ID = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
 TOKEN_FILE = os.getenv('GOOGLE_TOKEN_FILE', 'token.pickle')
 DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL')
 
-def send_discord_notification(message, error_type="ERROR"):
+def send_discord_notification(message, error_type="ERROR", division=None, date=None, gender=None, game_link=None):
     """
     Send a notification to Discord webhook
     
     Args:
         message (str): Message to send
         error_type (str): Type of notification (ERROR, WARNING, INFO)
+        division (str): Division (d1, d2, d3)
+        date (str): Date in YYYY-MM-DD format
+        gender (str): Gender (men, women)
+        game_link (str): Specific game link if applicable
     """
     if not DISCORD_WEBHOOK_URL:
         logger.debug("Discord webhook URL not configured, skipping notification")
@@ -68,20 +72,61 @@ def send_discord_notification(message, error_type="ERROR"):
             "ERROR": "🚨",
             "WARNING": "⚠️", 
             "INFO": "ℹ️",
-            "SUCCESS": "✅"
+            "SUCCESS": "✅",
+            "GAME_ERROR": "🏀"
         }
         emoji = emoji_map.get(error_type, "📢")
         
+        # Build title with context
+        title = f"{emoji} NCAA Scraper {error_type}"
+        if division and gender:
+            title += f" - {gender.title()} {division.upper()}"
+        
+        # Build description with context
+        description = message
+        fields = []
+        
+        if date:
+            fields.append({
+                "name": "📅 Date",
+                "value": date,
+                "inline": True
+            })
+        
+        if division:
+            fields.append({
+                "name": "🏆 Division",
+                "value": division.upper(),
+                "inline": True
+            })
+        
+        if gender:
+            fields.append({
+                "name": "⚽ Gender",
+                "value": gender.title(),
+                "inline": True
+            })
+        
+        if game_link:
+            fields.append({
+                "name": "🔗 Game Link",
+                "value": f"[View Game]({game_link})",
+                "inline": False
+            })
+        
         # Create Discord embed
         embed = {
-            "title": f"{emoji} NCAA Scraper {error_type}",
-            "description": message,
+            "title": title,
+            "description": description,
             "color": 0xff0000 if error_type == "ERROR" else 0xffaa00 if error_type == "WARNING" else 0x00ff00,
             "timestamp": datetime.datetime.utcnow().isoformat(),
             "footer": {
                 "text": "NCAA Basketball Scraper"
             }
         }
+        
+        if fields:
+            embed["fields"] = fields
         
         payload = {
             "embeds": [embed]
@@ -365,7 +410,13 @@ def get_box_scores(link, output_dir=".", upload_to_gdrive=False, gdrive_folder_i
         except Exception as e:
             error_msg = f"Failed to load scoreboard page {link}: {e}"
             logger.error(error_msg)
-            send_discord_notification(error_msg, "ERROR")
+            send_discord_notification(
+                error_msg, 
+                "ERROR", 
+                division=division, 
+                date=f"{year}-{month}-{day}", 
+                gender=gender
+            )
             return
         
         # Wait for the page to load and find game links
@@ -383,7 +434,13 @@ def get_box_scores(link, output_dir=".", upload_to_gdrive=False, gdrive_folder_i
                 if error_404:
                     warning_msg = f"Page not found (404) - 'That's a foul on us...' error for {link}"
                     logger.warning(warning_msg)
-                    send_discord_notification(warning_msg, "WARNING")
+                    send_discord_notification(
+                        warning_msg, 
+                        "WARNING", 
+                        division=division, 
+                        date=f"{year}-{month}-{day}", 
+                        gender=gender
+                    )
                     return
                 elif "404" in driver.title or "not found" in driver.title.lower():
                     logger.warning(f"Page not found (404) for {link}")
@@ -439,7 +496,16 @@ def get_box_scores(link, output_dir=".", upload_to_gdrive=False, gdrive_folder_i
                 driver.get(box_score_link)
                 logger.info(f"Successfully navigated to: {box_score_link}")
             except Exception as e:
+                error_msg = f"Failed to navigate to game page: {e}"
                 logger.error(f"Failed to navigate to {box_score_link}: {e}")
+                send_discord_notification(
+                    error_msg, 
+                    "GAME_ERROR", 
+                    division=division, 
+                    date=f"{year}-{month}-{day}", 
+                    gender=gender, 
+                    game_link=box_score_link
+                )
                 continue
             
             # Wait for the page to load completely
@@ -507,7 +573,16 @@ def get_box_scores(link, output_dir=".", upload_to_gdrive=False, gdrive_folder_i
                     df_team_one = df_team_one.iloc[:-2]  # Remove last 2 rows
                     
                 except Exception as e:
+                    error_msg = f"Error parsing first team data: {e}"
                     logger.error(f"Error parsing first team data from {box_score_link}: {e}")
+                    send_discord_notification(
+                        error_msg, 
+                        "GAME_ERROR", 
+                        division=division, 
+                        date=f"{year}-{month}-{day}", 
+                        gender=gender, 
+                        game_link=box_score_link
+                    )
                     continue
                 
                 # Click to switch to second team
@@ -534,7 +609,16 @@ def get_box_scores(link, output_dir=".", upload_to_gdrive=False, gdrive_folder_i
                     df_team_two = df_team_two.iloc[:-2]  # Remove last 2 rows
                     
                 except Exception as e:
+                    error_msg = f"Error parsing second team data: {e}"
                     logger.error(f"Error parsing second team data from {box_score_link}: {e}")
+                    send_discord_notification(
+                        error_msg, 
+                        "GAME_ERROR", 
+                        division=division, 
+                        date=f"{year}-{month}-{day}", 
+                        gender=gender, 
+                        game_link=box_score_link
+                    )
                     continue
 
                 # Combine both teams into one dataframe
@@ -552,11 +636,29 @@ def get_box_scores(link, output_dir=".", upload_to_gdrive=False, gdrive_folder_i
                     logger.info(f"Successfully saved {len(combined_df)} rows to: {csv_name}")
                     
                 except Exception as e:
+                    error_msg = f"Error saving game data: {e}"
                     logger.error(f"Error saving data for {box_score_link}: {e}")
+                    send_discord_notification(
+                        error_msg, 
+                        "GAME_ERROR", 
+                        division=division, 
+                        date=f"{year}-{month}-{day}", 
+                        gender=gender, 
+                        game_link=box_score_link
+                    )
                     continue
                 
             except Exception as e:
+                error_msg = f"Unexpected error processing game: {e}"
                 logger.error(f"Unexpected error processing {box_score_link}: {e}")
+                send_discord_notification(
+                    error_msg, 
+                    "GAME_ERROR", 
+                    division=division, 
+                    date=f"{year}-{month}-{day}", 
+                    gender=gender, 
+                    game_link=box_score_link
+                )
                 continue
         
         # Upload the complete CSV file to Google Drive after all games are processed
