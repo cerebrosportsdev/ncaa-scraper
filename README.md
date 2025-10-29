@@ -1,4 +1,4 @@
-# NCAA Basketball Box Score Scraper (Refactored)
+# NCAA Basketball Box Score Scraper
 
 A modular, well-structured scraper for NCAA basketball box scores with Google Drive integration.
 
@@ -191,14 +191,18 @@ The refactored version is backward compatible with the original:
 
 ### Environment Variables
 ```bash
-# Required for Google Drive
+# OAuth client
 GOOGLE_CLIENT_ID=your_client_id_here
 GOOGLE_CLIENT_SECRET=your_client_secret_here
-GOOGLE_REDIRECT_URI=urn:ietf:wg:oauth:2.0:oob
+GOOGLE_REDIRECT_URI=http://localhost:8080/
 
-# Optional
-GOOGLE_DRIVE_FOLDER_ID=your_folder_id_here
+# OAuth token (base64 of token.pickle)
+GOOGLE_TOKEN_FILE_B64=your_base64_token_pickle
+
+# Optional notifications
 DISCORD_WEBHOOK_URL=your_discord_webhook_url_here
+
+# Optional runtime
 OUTPUT_DIR=scraped_data
 LOG_LEVEL=INFO
 ```
@@ -414,23 +418,44 @@ docker run ncaa-scraper
 
 ## GitHub Actions Setup Guide
 
-Required repository secrets:
+### Pick one workflow
+- `/.github/workflows/ncaa-scraper.yml` (regular): faster startup on GitHub runners.
+- `/.github/workflows/ncaa-scraper-docker.yml` (docker): highest reproducibility.
 
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
-- `GOOGLE_DRIVE_FOLDER_ID`, `GOOGLE_CREDENTIALS_JSON`
-- `DISCORD_WEBHOOK_URL` (optional)
+Both are scheduled to run daily at 06:00 UTC. If you keep both, both will run; disable `schedule` in one if you only want a single daily run.
 
-Features:
+### Authentication for Google Drive
 
+1) OAuth token (recommended for personal My Drive)
+- Secrets to add:
+  - `GOOGLE_TOKEN_FILE_B64` – base64 of your local `token.pickle`
+  - `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
+  - `GOOGLE_DRIVE_FOLDER_ID` (optional but recommended)
+  - `DISCORD_WEBHOOK_URL` (optional)
+- Create `token.pickle` locally by running `python main.py` once and completing the browser login.
+- Base64 (PowerShell):
+  ```powershell
+  $b64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes(".\token.pickle"))
+  $b64 | Set-Clipboard
+  ```
+  Paste clipboard into the `GOOGLE_TOKEN_FILE_B64` secret.
+
+2) Service Account (optional; requires Shared Drive)
+- Use `GOOGLE_CREDENTIALS_JSON_B64` and a Shared Drive folder shared with the service account.
+- Service accounts cannot upload to personal My Drive.
+
+### Features
 - Daily schedule at 6:00 AM UTC
 - Manual triggers with inputs (date/divisions/genders/backfill)
 - Artifacts for data and logs; automatic cleanup
 
-Change schedule in `.github/workflows/ncaa-scraper.yml`:
-
+### Change schedule
+In the chosen workflow file:
 ```yaml
 schedule:
   - cron: '0 6 * * *'
 ```
 
-See workflows: `ncaa-scraper.yml` and `ncaa-scraper-docker.yml`.
+### Workflows
+- Regular: `/.github/workflows/ncaa-scraper.yml`
+- Docker: `/.github/workflows/ncaa-scraper-docker.yml`
