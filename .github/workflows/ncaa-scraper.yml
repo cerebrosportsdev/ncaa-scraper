@@ -79,15 +79,15 @@ jobs:
         mkdir -p data logs chrome-session
         chmod 755 chrome-session
         
-    - name: Provide OAuth token (use GOOGLE_TOKEN_B64)
+    - name: Provide OAuth token (use GOOGLE_TOKEN_FILE_B64)
       shell: bash
       run: |
         # Recreate token.pickle from secret
-        if [ -n "${{ secrets.GOOGLE_TOKEN_B64 }}" ]; then
-          printf '%s' '${{ secrets.GOOGLE_TOKEN_B64 }}' | base64 -d > token.pickle
+        if [ -n "${{ secrets.GOOGLE_TOKEN_FILE_B64 }}" ]; then
+          printf '%s' '${{ secrets.GOOGLE_TOKEN_FILE_B64 }}' | base64 -d > token.pickle
           echo "GOOGLE_TOKEN_FILE=token.pickle" >> $GITHUB_ENV
         else
-          echo "GOOGLE_TOKEN_B64 secret is missing" >&2; exit 1
+          echo "GOOGLE_TOKEN_FILE_B64 secret is missing" >&2; exit 1
         fi
 
         # Ensure service account path is disabled
