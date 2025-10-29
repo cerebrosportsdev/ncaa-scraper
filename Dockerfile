@@ -67,4 +67,5 @@ RUN mkdir -p /tmp/chrome-session /app/chrome-session && \
 RUN chmod 755 /usr/bin/google-chrome
 
 # Default command
-CMD ["python", "main.py"]
+ENTRYPOINT ["python", "main.py"]
+CMD []

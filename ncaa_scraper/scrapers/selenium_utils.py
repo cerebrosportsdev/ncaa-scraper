@@ -4,6 +4,7 @@ import time
 import logging
 import os
 import shutil
+import random
 from typing import List, Optional
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -46,7 +47,7 @@ class SeleniumUtils:
                 if headless or os.getenv('DOCKER_CONTAINER', 'false').lower() == 'true':
                     options.add_argument("--headless=new")
                 
-                # Essential Chrome options for stability
+                # Essential Chrome options for stability and anti-detection
                 options.add_argument("--no-sandbox")
                 options.add_argument("--disable-dev-shm-usage")
                 options.add_argument("--disable-gpu")
@@ -60,7 +61,6 @@ class SeleniumUtils:
                 options.add_argument("--disable-plugins")
                 options.add_argument("--disable-web-security")
                 options.add_argument("--disable-features=VizDisplayCompositor")
-                options.add_argument("--incognito")
                 options.add_argument("--ignore-certificate-errors")
                 options.add_argument("--ignore-ssl-errors")
                 options.add_argument("--allow-running-insecure-content")
@@ -80,11 +80,35 @@ class SeleniumUtils:
                 options.add_argument("--disable-features=TranslateUI")
                 options.add_argument("--disable-ipc-flooding-protection")
                 
+                # Anti-detection measures
+                options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                options.add_argument("--accept-language=en-US,en;q=0.9")
+                options.add_argument("--accept-encoding=gzip, deflate, br")
+                options.add_argument("--accept=text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8")
+                options.add_argument("--upgrade-insecure-requests=1")
+                options.add_argument("--sec-fetch-site=none")
+                options.add_argument("--sec-fetch-mode=navigate")
+                options.add_argument("--sec-fetch-user=?1")
+                options.add_argument("--sec-fetch-dest=document")
+                options.add_argument("--cache-control=max-age=0")
+                
                 # Disable automation detection
                 options.add_experimental_option("useAutomationExtension", False)
-                options.add_experimental_option("excludeSwitches", ["enable-automation"])
-                options.add_experimental_option('excludeSwitches', ['enable-logging'])
+                options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
                 options.add_experimental_option('useAutomationExtension', False)
+                
+                # Additional anti-detection measures
+                prefs = {
+                    "profile.default_content_setting_values": {
+                        "notifications": 2,
+                        "geolocation": 2,
+                        "media_stream": 2,
+                    },
+                    "profile.managed_default_content_settings": {
+                        "images": 1
+                    }
+                }
+                options.add_experimental_option("prefs", prefs)
                 
                 # Set up WebDriverManager
                 cache_dir = "/tmp/chrome-session" if os.path.exists("/tmp") else os.path.join(os.getcwd(), "chrome-session")
@@ -111,6 +135,13 @@ class SeleniumUtils:
                 
                 # Create driver
                 driver = webdriver.Chrome(service=service, options=options)
+                
+                # Execute anti-detection scripts
+                driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+                driver.execute_script("Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]})")
+                driver.execute_script("Object.defineProperty(navigator, 'languages', {get: () => ['en-US', 'en']})")
+                driver.execute_script("window.chrome = {runtime: {}}")
+                driver.execute_script("Object.defineProperty(navigator, 'permissions', {get: () => ({query: () => Promise.resolve({state: 'granted'})})})")
                 
                 # Test the driver
                 driver.get("about:blank")
@@ -162,6 +193,12 @@ class SeleniumUtils:
                         
         except Exception as e:
             logger.warning(f"Error during cleanup: {e}")
+    
+    @staticmethod
+    def human_like_delay(min_seconds: float = 1.0, max_seconds: float = 3.0):
+        """Add a human-like random delay."""
+        delay = random.uniform(min_seconds, max_seconds)
+        time.sleep(delay)
     
     @staticmethod
     def safe_quit_driver(driver: Optional[webdriver.Chrome]) -> bool:

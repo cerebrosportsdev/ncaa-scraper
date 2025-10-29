@@ -128,7 +128,14 @@ class NCAAScraper(BaseScraper):
         """Load the scoreboard page and check for errors."""
         try:
             self.logger.info(f"Loading scoreboard page: {url}")
+            
+            # Add human-like delay before loading
+            SeleniumUtils.human_like_delay(1.0, 2.0)
+            
             self.driver.get(url)
+            
+            # Add another delay after page load
+            SeleniumUtils.human_like_delay(2.0, 4.0)
             
             # Wait for page to load
             wait = WebDriverWait(self.driver, self.config.wait_timeout)

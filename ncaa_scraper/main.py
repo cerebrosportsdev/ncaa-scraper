@@ -58,7 +58,8 @@ def main():
         if args.backfill:
             # Backfill specific dates
             backfill_dates = [
-                date(2025, 1, 12)
+                date(2025, 1, 12),
+                date(2025, 2, 15)  # Add your desired date here
             ]
             
             for target_date in backfill_dates:
