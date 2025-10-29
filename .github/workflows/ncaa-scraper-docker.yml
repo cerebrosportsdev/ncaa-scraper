@@ -59,10 +59,11 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
         
-    - name: Set up Google Drive credentials (B64)
+    - name: Set up Google Drive credentials (supports RAW or B64 secret)
       shell: bash
       run: |
         # Create .env with required env vars including base64 credentials
+        # Prefer B64 secret; else convert RAW JSON to B64 for safe dotenv usage
         cat > .env << EOF
         GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
         GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
@@ -72,8 +73,14 @@ jobs:
         OUTPUT_DIR=/app/data
         LOG_LEVEL=INFO
         UPLOAD_TO_GDRIVE=true
-        GOOGLE_CREDENTIALS_JSON_B64=${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}
         EOF
+
+        if [ -n "${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}" ]; then
+          echo "GOOGLE_CREDENTIALS_JSON_B64=${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}" >> .env
+        elif [ -n "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" ]; then
+          ENC=$(printf '%s' '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' | base64 -w0)
+          echo "GOOGLE_CREDENTIALS_JSON_B64=$ENC" >> .env
+        fi
         
     - name: Run NCAA Scraper with Docker
       run: |

@@ -79,12 +79,18 @@ jobs:
         mkdir -p data logs chrome-session
         chmod 755 chrome-session
         
-    - name: Set up Google Drive credentials (B64)
+    - name: Set up Google Drive credentials (supports RAW or B64 secret)
       shell: bash
       run: |
-        # Export base64 credentials to job env for the app to decode
+        # Prefer provided B64 secret; otherwise convert RAW JSON to B64 for safe use
         if [ -n "${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}" ]; then
           echo "GOOGLE_CREDENTIALS_JSON_B64=${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}" >> $GITHUB_ENV
+          B64_SET=1
+        elif [ -n "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" ]; then
+          # Convert RAW JSON to base64 without newlines
+          ENC=$(printf '%s' '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' | base64 -w0)
+          echo "GOOGLE_CREDENTIALS_JSON_B64=$ENC" >> $GITHUB_ENV
+          B64_SET=1
         fi
 
         # Create .env file with required environment variables
@@ -97,9 +103,16 @@ jobs:
         OUTPUT_DIR=data
         LOG_LEVEL=INFO
         UPLOAD_TO_GDRIVE=true
-        # Also include B64 in .env for completeness
-        GOOGLE_CREDENTIALS_JSON_B64=${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}
         EOF
+
+        # If we set a B64 value above (from either secret), append it to .env for the app (and for Docker parity)
+        if [ "$B64_SET" = "1" ]; then
+          echo "GOOGLE_CREDENTIALS_JSON_B64=${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}" >> .env || true
+        elif [ -n "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" ]; then
+          # Derive again to avoid leaking via env substitution
+          ENC=$(printf '%s' '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' | base64 -w0)
+          echo "GOOGLE_CREDENTIALS_JSON_B64=$ENC" >> .env
+        fi
         
     - name: Run NCAA Scraper
       run: |
