@@ -53,7 +53,7 @@ jobs:
         python-version: '3.11'
         
     - name: Cache pip dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
@@ -129,7 +129,7 @@ jobs:
         eval $CMD
         
     - name: Upload scraped data as artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: scraped-data-${{ github.run_number }}
@@ -137,7 +137,7 @@ jobs:
         retention-days: 30
         
     - name: Upload logs as artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()
       with:
         name: logs-${{ github.run_number }}
