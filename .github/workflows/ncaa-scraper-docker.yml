@@ -56,6 +56,7 @@ jobs:
         context: .
         push: false
         tags: ncaa-scraper:latest
+        load: true
         cache-from: type=gha
         cache-to: type=gha,mode=max
         
@@ -82,6 +83,14 @@ jobs:
         GOOGLE_TOKEN_FILE=/app/token.pickle
         GOOGLE_CREDENTIALS_JSON_B64=
         EOF
+        
+    - name: Verify Docker image exists
+      run: |
+        docker images | grep ncaa-scraper
+        if [ $? -ne 0 ]; then
+          echo "Docker image ncaa-scraper:latest not found!"
+          exit 1
+        fi
         
     - name: Run NCAA Scraper with Docker
       run: |
