@@ -59,12 +59,10 @@ jobs:
         cache-from: type=gha
         cache-to: type=gha,mode=max
         
-    - name: Set up Google Drive credentials
+    - name: Set up Google Drive credentials (B64)
+      shell: bash
       run: |
-        # Create credentials.json from secrets
-        echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
-        
-        # Create .env file with all required environment variables
+        # Create .env with required env vars including base64 credentials
         cat > .env << EOF
         GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
         GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
@@ -74,6 +72,7 @@ jobs:
         OUTPUT_DIR=/app/data
         LOG_LEVEL=INFO
         UPLOAD_TO_GDRIVE=true
+        GOOGLE_CREDENTIALS_JSON_B64=${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}
         EOF
         
     - name: Run NCAA Scraper with Docker
@@ -112,7 +111,6 @@ jobs:
           --name ncaa-scraper \
           -v $(pwd)/data:/app/data \
           -v $(pwd)/logs:/app/logs \
-          -v $(pwd)/credentials.json:/app/credentials.json \
           -v $(pwd)/.env:/app/.env \
           -v $(pwd)/token.pickle:/app/token.pickle \
           -e PYTHONUNBUFFERED=1 \

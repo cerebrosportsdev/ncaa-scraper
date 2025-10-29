@@ -79,12 +79,15 @@ jobs:
         mkdir -p data logs chrome-session
         chmod 755 chrome-session
         
-    - name: Set up Google Drive credentials
+    - name: Set up Google Drive credentials (B64)
+      shell: bash
       run: |
-        # Create credentials.json from secrets
-        echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
-        
-        # Create .env file with all required environment variables
+        # Export base64 credentials to job env for the app to decode
+        if [ -n "${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}" ]; then
+          echo "GOOGLE_CREDENTIALS_JSON_B64=${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}" >> $GITHUB_ENV
+        fi
+
+        # Create .env file with required environment variables
         cat > .env << EOF
         GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
         GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
@@ -94,6 +97,8 @@ jobs:
         OUTPUT_DIR=data
         LOG_LEVEL=INFO
         UPLOAD_TO_GDRIVE=true
+        # Also include B64 in .env for completeness
+        GOOGLE_CREDENTIALS_JSON_B64=${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}
         EOF
         
     - name: Run NCAA Scraper
