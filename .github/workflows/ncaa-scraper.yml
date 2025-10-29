@@ -79,19 +79,19 @@ jobs:
         mkdir -p data logs chrome-session
         chmod 755 chrome-session
         
-    - name: Set up Google Drive credentials (supports RAW or B64 secret)
+    - name: Provide OAuth token (use GOOGLE_TOKEN_B64)
       shell: bash
       run: |
-        # Prefer provided B64 secret; otherwise convert RAW JSON to B64 for safe use
-        if [ -n "${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}" ]; then
-          echo "GOOGLE_CREDENTIALS_JSON_B64=${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}" >> $GITHUB_ENV
-          B64_SET=1
-        elif [ -n "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" ]; then
-          # Convert RAW JSON to base64 without newlines
-          ENC=$(printf '%s' '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' | base64 -w0)
-          echo "GOOGLE_CREDENTIALS_JSON_B64=$ENC" >> $GITHUB_ENV
-          B64_SET=1
+        # Recreate token.pickle from secret
+        if [ -n "${{ secrets.GOOGLE_TOKEN_B64 }}" ]; then
+          printf '%s' '${{ secrets.GOOGLE_TOKEN_B64 }}' | base64 -d > token.pickle
+          echo "GOOGLE_TOKEN_FILE=token.pickle" >> $GITHUB_ENV
+        else
+          echo "GOOGLE_TOKEN_B64 secret is missing" >&2; exit 1
         fi
+
+        # Ensure service account path is disabled
+        echo "GOOGLE_CREDENTIALS_JSON_B64=" >> $GITHUB_ENV
 
         # Create .env file with required environment variables
         cat > .env << EOF
@@ -103,16 +103,9 @@ jobs:
         OUTPUT_DIR=data
         LOG_LEVEL=INFO
         UPLOAD_TO_GDRIVE=true
+        GOOGLE_TOKEN_FILE=token.pickle
+        GOOGLE_CREDENTIALS_JSON_B64=
         EOF
-
-        # If we set a B64 value above (from either secret), append it to .env for the app (and for Docker parity)
-        if [ "$B64_SET" = "1" ]; then
-          echo "GOOGLE_CREDENTIALS_JSON_B64=${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}" >> .env || true
-        elif [ -n "${{ secrets.GOOGLE_CREDENTIALS_JSON }}" ]; then
-          # Derive again to avoid leaking via env substitution
-          ENC=$(printf '%s' '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' | base64 -w0)
-          echo "GOOGLE_CREDENTIALS_JSON_B64=$ENC" >> .env
-        fi
         
     - name: Run NCAA Scraper
       run: |

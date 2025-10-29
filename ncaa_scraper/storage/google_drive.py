@@ -117,7 +117,12 @@ class GoogleDriveManager:
             if folder_id:
                 query += f" and '{folder_id}' in parents"
             
-            results = self.service.files().list(q=query, fields="files(id, name, modifiedTime, size)").execute()
+            results = self.service.files().list(
+                q=query,
+                fields="files(id, name, modifiedTime, size)",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
+            ).execute()
             files = results.get('files', [])
             
             if files:
@@ -161,8 +166,9 @@ class GoogleDriveManager:
             try:
                 # Get Google Drive file metadata
                 file_metadata = self.service.files().get(
-                    fileId=existing_file_id, 
-                    fields="modifiedTime, size"
+                    fileId=existing_file_id,
+                    fields="modifiedTime, size",
+                    supportsAllDrives=True
                 ).execute()
                 
                 gdrive_modified = file_metadata.get('modifiedTime', '')
@@ -239,7 +245,8 @@ class GoogleDriveManager:
                     fileId=existing_file_id,
                     body=file_metadata,
                     media_body=media,
-                    fields='id'
+                    fields='id',
+                    supportsAllDrives=True
                 ).execute()
                 logger.info(f"Successfully updated {file_path} in Google Drive. File ID: {file.get('id')}")
             else:
@@ -247,7 +254,8 @@ class GoogleDriveManager:
                 file = self.service.files().create(
                     body=file_metadata,
                     media_body=media,
-                    fields='id'
+                    fields='id',
+                    supportsAllDrives=True
                 ).execute()
                 logger.info(f"Successfully uploaded {file_path} to Google Drive. File ID: {file.get('id')}")
             
@@ -283,7 +291,8 @@ class GoogleDriveManager:
             
             folder = self.service.files().create(
                 body=file_metadata,
-                fields='id'
+                fields='id',
+                supportsAllDrives=True
             ).execute()
             
             logger.info(f"Created Google Drive folder: {folder_name} (ID: {folder.get('id')})")
@@ -314,7 +323,12 @@ class GoogleDriveManager:
             if parent_folder_id:
                 query += f" and '{parent_folder_id}' in parents"
             
-            results = self.service.files().list(q=query, fields="files(id, name)").execute()
+            results = self.service.files().list(
+                q=query,
+                fields="files(id, name)",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
+            ).execute()
             files = results.get('files', [])
             
             if files:
@@ -413,8 +427,10 @@ class GoogleDriveManager:
                 query += f" and '{folder_id}' in parents"
             
             results = self.service.files().list(
-                q=query, 
-                fields="files(id, name, size, modifiedTime, mimeType)"
+                q=query,
+                fields="files(id, name, size, modifiedTime, mimeType)",
+                supportsAllDrives=True,
+                includeItemsFromAllDrives=True
             ).execute()
             
             files = results.get('files', [])
@@ -485,7 +501,12 @@ class GoogleDriveManager:
             else:
                 # Check for any files in the month folder
                 query = f"'{folder_id}' in parents and trashed=false and name contains 'basketball_{gender}_{division}_{year}_{month}'"
-                results = self.service.files().list(q=query, fields="files(id, name)").execute()
+                results = self.service.files().list(
+                    q=query,
+                    fields="files(id, name)",
+                    supportsAllDrives=True,
+                    includeItemsFromAllDrives=True
+                ).execute()
                 files = results.get('files', [])
                 
                 if files:
