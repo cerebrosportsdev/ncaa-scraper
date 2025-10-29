@@ -69,16 +69,39 @@ ncaa_scraper/
 ## ⚙️ Configuration & Setup
 
 ### Quick Start
+
+#### Option 1: Docker (Recommended) 🐳
 ```bash
-# Install dependencies
+# Build and run - no setup needed!
+docker build -t ncaa-scraper .
+docker run --rm ncaa-scraper
+
+# With custom date
+docker run --rm ncaa-scraper --date 2025/01/15
+
+# With specific divisions/genders
+docker run --rm ncaa-scraper --date 2025/01/15 --divisions d3 --genders women
+```
+
+**Why Docker?** Same environment as production, no dependency conflicts, works everywhere!
+
+#### Option 2: Local Python Development 🐍
+```bash
+# 1. Create virtual environment (REQUIRED - prevents dependency conflicts)
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# 2. Install dependencies
 pip install -r requirements.txt
 
-# Set up Google Drive credentials (optional)
+# 3. Set up Google Drive credentials (optional)
 python migrate_credentials.py
 
-# Run with default settings (yesterday's games, all divisions/genders)
+# 4. Run with default settings (yesterday's games, all divisions/genders)
 python main.py
 ```
+
+**⚠️ Important:** Always use a virtual environment for local Python development to avoid dependency conflicts!
 
 ### Environment Variables
 Create a `.env` file in the project root:
@@ -141,17 +164,28 @@ python main.py --output-dir /path/to/data
 python main.py --backfill
 ```
 
-### Docker Usage
+### Docker Development
 ```bash
-# Build and run
+# Build the image
 docker build -t ncaa-scraper .
+
+# Basic usage (same as local Python)
 docker run --rm ncaa-scraper
-
-# With custom date
 docker run --rm ncaa-scraper --date 2025/01/15
+docker run --rm ncaa-scraper --divisions d3 --genders women
 
-# With specific divisions/genders
-docker run --rm ncaa-scraper --date 2025/01/15 --divisions d3 --genders women
+# Development with volume mounts (preserves data/logs)
+docker run --rm \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
+  -v $(pwd)/.env:/app/.env \
+  ncaa-scraper --date 2025/01/15
+
+# Interactive debugging
+docker run -it --rm \
+  -v $(pwd)/data:/app/data \
+  -v $(pwd)/logs:/app/logs \
+  ncaa-scraper /bin/bash
 ```
 
 ### Programmatic Usage
@@ -179,11 +213,33 @@ for url in urls:
 ## 🐛 Troubleshooting
 
 ### Common Issues
-1. **Import Errors**: Make sure you're in the project root directory
-2. **Selenium Issues**: Ensure Chrome browser is installed
-3. **Google Drive Auth**: Run `python migrate_credentials.py` to set up credentials
-4. **Permission Errors**: Check file/directory permissions
-5. **Rate Limiting**: Wait 15-30 minutes between runs, or use `--divisions` and `--genders` to reduce requests
+
+#### Virtual Environment Issues
+1. **"Module not found" errors**: Make sure you activated your virtual environment
+   ```bash
+   # Check if venv is active (should show (venv) in prompt)
+   which python  # Should point to venv/bin/python
+   
+   # If not active, activate it
+   source venv/bin/activate  # Linux/Mac
+   venv\Scripts\activate     # Windows
+   ```
+
+2. **Dependency conflicts**: Always use a fresh virtual environment
+   ```bash
+   # Remove old venv and create new one
+   rm -rf venv
+   python -m venv venv
+   source venv/bin/activate
+   pip install -r requirements.txt
+   ```
+
+#### General Issues
+3. **Import Errors**: Make sure you're in the project root directory
+4. **Selenium Issues**: Ensure Chrome browser is installed (or use Docker)
+5. **Google Drive Auth**: Run `python migrate_credentials.py` to set up credentials
+6. **Permission Errors**: Check file/directory permissions
+7. **Rate Limiting**: Wait 15-30 minutes between runs, or use `--divisions` and `--genders` to reduce requests
 
 ### Debug Mode
 ```bash
