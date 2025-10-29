@@ -1,75 +1,142 @@
-# NCAA Basketball Box Score Scraper
+# NCAA Basketball Box Score Scraper (Refactored)
 
-An automated scraper for NCAA basketball box scores with Google Drive integration.
+A modular, well-structured scraper for NCAA basketball box scores with Google Drive integration.
 
 ## 🚀 Quick Start
 
-### 1. Clone the Repository
+### 1. Set Up Environment
 ```bash
-git clone https://github.com/biggame27/ncaa-basketball-scraper.git
-cd ncaa-basketball-scraper
-```
-
-### 2. Set Up Python Environment
-```bash
-# Create virtual environment
-python -m venv venv
-
-# Activate virtual environment
-# Windows:
-.\venv\Scripts\activate
-# Mac/Linux:
-source venv/bin/activate
-
 # Install dependencies
 pip install -r requirements.txt
+
+# Set up Google Drive credentials (optional)
+python migrate_credentials.py
 ```
 
-### 3. Set Up Google Drive (Optional)
-1. **Get Google Drive API Credentials:**
-   - Follow the instructions in `GOOGLE_DRIVE_SETUP.md` to get your credentials
-
-2. **Configure Environment Variables:**
-   
-   **Quick Setup:**
-   ```bash
-   python migrate_credentials.py
-   ```
-   This will prompt you for your Google OAuth2 credentials and create the `.env` file automatically.
-   
-   **Manual Setup (Alternative):**
-   ```bash
-   # Create .env file manually
-   echo "GOOGLE_CLIENT_ID=your_client_id_here" > .env
-   echo "GOOGLE_CLIENT_SECRET=your_client_secret_here" >> .env
-   echo "GOOGLE_REDIRECT_URI=urn:ietf:wg:oauth:2.0:oob" >> .env
-   ```
-   
-   **Required Environment Variables:**
-   ```bash
-   # Required for Google Drive integration
-   GOOGLE_CLIENT_ID=your_client_id_here
-   GOOGLE_CLIENT_SECRET=your_client_secret_here
-   GOOGLE_REDIRECT_URI=urn:ietf:wg:oauth:2.0:oob
-   
-   # Optional
-   GOOGLE_DRIVE_FOLDER_ID=your_folder_id_here
-   DISCORD_WEBHOOK_URL=your_discord_webhook_url_here
-   ```
-
-### 4. Run the Scraper
+### 2. Run the Scraper
 ```bash
 # Scrape yesterday's games
-python ncaa_scraper.py
+python main.py
 
 # Scrape specific date
-python ncaa_scraper.py --date 2025/01/15
+python main.py --date 2025/01/15
 
 # Upload to Google Drive
-python ncaa_scraper.py --upload-gdrive
+python main.py --upload-gdrive
+
+# Scrape multiple divisions and genders
+python main.py --divisions d1 d2 d3 --genders men women
 ```
 
-## 📁 Features
+## 📁 New Architecture
+
+The refactored scraper is organized into focused, modular components:
+
+```
+ncaa_scraper/
+├── config/              # Configuration management
+│   ├── settings.py      # Main configuration class
+│   └── constants.py     # Constants and enums
+├── models/              # Data models
+│   ├── game_data.py     # Game and team data models
+│   └── scraping_config.py # Scraping configuration models
+├── utils/               # Utility functions
+│   ├── date_utils.py    # Date handling
+│   ├── url_utils.py     # URL generation and parsing
+│   └── validators.py    # Input validation
+├── storage/             # Storage operations
+│   ├── file_manager.py  # Local file operations
+│   ├── csv_handler.py   # CSV-specific operations
+│   └── google_drive.py  # Google Drive integration
+├── notifications/       # Notification systems
+│   ├── base_notifier.py # Base notification interface
+│   └── discord_notifier.py # Discord notifications
+├── scrapers/            # Scraping logic
+│   ├── base_scraper.py  # Base scraper class
+│   ├── ncaa_scraper.py  # NCAA-specific scraper
+│   └── selenium_utils.py # Selenium utilities
+└── main.py              # Main entry point
+```
+
+## ✨ Key Improvements
+
+### 1. **Modular Design**
+- Each component has a single responsibility
+- Easy to test, maintain, and extend
+- Clear separation of concerns
+
+### 2. **Better Error Handling**
+- Centralized error handling strategies
+- Comprehensive logging throughout
+- Graceful degradation on failures
+
+### 3. **Type Safety**
+- Type hints throughout the codebase
+- Data models with validation
+- Better IDE support and debugging
+
+### 4. **Configuration Management**
+- Centralized configuration with validation
+- Environment variable support
+- Easy to override settings
+
+### 5. **Extensibility**
+- Base classes for easy extension
+- Plugin-like architecture for notifications
+- Easy to add new scrapers or storage backends
+
+## 🔧 Usage
+
+### Basic Usage
+```bash
+# Scrape yesterday's women's D3 games
+python main.py
+
+# Scrape specific date
+python main.py --date 2025/01/15
+
+# Upload to Google Drive
+python main.py --upload-gdrive
+```
+
+### Advanced Usage
+```bash
+# Scrape multiple divisions
+python main.py --divisions d1 d2 d3
+
+# Scrape both genders
+python main.py --genders men women
+
+# Custom output directory
+python main.py --output-dir /path/to/data
+
+# Backfill specific dates
+python main.py --backfill
+```
+
+### Programmatic Usage
+```python
+from ncaa_scraper.config import get_config
+from ncaa_scraper.scrapers import NCAAScraper
+from ncaa_scraper.utils import generate_ncaa_urls
+from datetime import date
+
+# Get configuration
+config = get_config()
+
+# Create scraper
+scraper = NCAAScraper(config)
+
+# Generate URLs
+urls = generate_ncaa_urls("2025/01/15")
+
+# Scrape data
+for url in urls:
+    games = scraper.scrape(url)
+    print(f"Scraped {len(games)} games from {url}")
+```
+
+## 📊 Features
 
 - 🏀 Scrapes NCAA basketball box scores (Men's & Women's, D1/D2/D3)
 - 📁 Organized folder structure by year/month/gender/division
@@ -77,91 +144,105 @@ python ncaa_scraper.py --upload-gdrive
 - 🔄 Duplicate prevention (session and file-based)
 - 📊 Batch processing and smart skipping
 - 🗓️ Date-based scraping with backfill support
+- 🔔 Discord notifications for errors and warnings
+- 🧪 Comprehensive error handling and logging
+- 🔧 Modular, extensible architecture
 
-## 📊 Usage
+## 🛠️ Development
 
+### Running Tests
 ```bash
-python ncaa_scraper.py [OPTIONS]
+# Run all tests
+python -m pytest tests/
 
-Options:
-  --date DATE              Date in YYYY/MM/DD format (default: yesterday)
-  --output-dir DIR         Output directory for CSV files (default: scraped_data)
-  --backfill              Run backfill for specific dates
-  --upload-gdrive         Upload scraped data to Google Drive
-  --gdrive-folder-id ID   Google Drive folder ID to upload to
+# Run with coverage
+python -m pytest --cov=ncaa_scraper tests/
 ```
 
-## 📂 File Structure
+### Adding New Features
+1. **New Scraper**: Extend `BaseScraper` class
+2. **New Storage**: Implement storage interface
+3. **New Notifications**: Extend `BaseNotifier` class
+4. **New Utilities**: Add to appropriate utility module
 
+### Code Style
+- Follow PEP 8
+- Use type hints
+- Add docstrings for all public methods
+- Write tests for new functionality
+
+## 🔄 Migration from Old Version
+
+The refactored version is backward compatible with the original:
+
+1. **Same CLI interface**: All original command-line arguments work
+2. **Same output format**: CSV files have the same structure
+3. **Same configuration**: Uses the same `.env` file format
+4. **Same features**: All original functionality is preserved
+
+### Key Differences
+- **Better organization**: Code is split into logical modules
+- **Improved error handling**: More robust error recovery
+- **Type safety**: Better IDE support and fewer runtime errors
+- **Extensibility**: Easy to add new features
+- **Testability**: Each component can be tested independently
+
+## 📝 Configuration
+
+### Environment Variables
+```bash
+# Required for Google Drive
+GOOGLE_CLIENT_ID=your_client_id_here
+GOOGLE_CLIENT_SECRET=your_client_secret_here
+GOOGLE_REDIRECT_URI=urn:ietf:wg:oauth:2.0:oob
+
+# Optional
+GOOGLE_DRIVE_FOLDER_ID=your_folder_id_here
+DISCORD_WEBHOOK_URL=your_discord_webhook_url_here
+OUTPUT_DIR=scraped_data
+LOG_LEVEL=INFO
 ```
-scraped_data/
-├── 2025/
-│   ├── 01/
-│   │   ├── men/
-│   │   │   ├── d1/
-│   │   │   │   └── basketball_men_d1_2025_01_15.csv
-│   │   │   ├── d2/
-│   │   │   └── d3/
-│   │   └── women/
-│   │       ├── d1/
-│   │       ├── d2/
-│   │       └── d3/
+
+### Configuration File
+You can also create a `config.yaml` file for more complex configurations:
+
+```yaml
+scraper:
+  output_dir: "scraped_data"
+  wait_timeout: 15
+  sleep_time: 2
+
+google_drive:
+  enabled: true
+  folder_id: "your_folder_id"
+
+notifications:
+  discord:
+    enabled: true
+    webhook_url: "your_webhook_url"
 ```
 
-## 🔧 Requirements
+## 🐛 Troubleshooting
 
-- Python 3.7+
-- Chrome browser
-- Google Drive API credentials (optional)
+### Common Issues
+1. **Import Errors**: Make sure you're in the project root directory
+2. **Selenium Issues**: Ensure Chrome browser is installed
+3. **Google Drive Auth**: Run `python migrate_credentials.py` to set up credentials
+4. **Permission Errors**: Check file/directory permissions
 
-## 📋 Setup Files
-
-- `requirements.txt` - Python dependencies
-- `migrate_credentials.py` - Simple .env setup helper
-- `GOOGLE_DRIVE_SETUP.md` - Google Drive API setup guide
-- `ncaa_scraper.py` - Main scraper script
-- `run_scraper.py` - Simple runner script
+### Debug Mode
+```bash
+# Enable debug logging
+LOG_LEVEL=DEBUG python main.py
+```
 
 ## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
-4. Test thoroughly
+4. Add tests
 5. Submit a pull request
-
-## 📝 Notes
-
-- The scraper automatically skips days that already have data
-- Google Drive integration is optional but recommended for data backup
-- Discord notifications are optional but helpful for monitoring errors
-- Use `python migrate_credentials.py` for easy .env setup
-- Credentials are stored in environment variables (.env file) for better security
-- The .env file is gitignored to keep your credentials secure
-- Authentication tokens are stored in token.pickle for reuse
-
-## 🔔 Discord Notifications
-
-The scraper can send error notifications to Discord when issues occur:
-
-1. **Create a Discord Webhook:**
-   - Go to your Discord server settings
-   - Navigate to Integrations → Webhooks
-   - Create a new webhook and copy the URL
-
-2. **Add to .env file:**
-   ```bash
-   DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/your_webhook_url_here
-   ```
-
-3. **Notifications sent for:**
-   - 🚨 **ERROR**: Critical failures (page load errors, main function crashes)
-   - ⚠️ **WARNING**: 404 errors, missing pages, data issues
-   - ✅ **SUCCESS**: Scraping completion (optional)
-
-## 🐛 Troubleshooting
-
-See `GOOGLE_DRIVE_SETUP.md` for common issues and solutions.
 
 ## 📄 License
 
