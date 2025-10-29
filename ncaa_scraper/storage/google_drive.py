@@ -35,7 +35,17 @@ class GoogleDriveManager:
 
             # Prefer service account in non-interactive environments
             service_account_json = os.getenv('GOOGLE_CREDENTIALS_JSON')
+            service_account_json_b64 = os.getenv('GOOGLE_CREDENTIALS_JSON_B64')
             credentials_file_path = os.getenv('GOOGLE_CREDENTIALS_FILE', 'credentials.json')
+
+            # Allow base64-encoded JSON to avoid dotenv parsing issues
+            if service_account_json_b64 and not service_account_json:
+                try:
+                    import base64
+                    decoded = base64.b64decode(service_account_json_b64).decode('utf-8')
+                    service_account_json = decoded
+                except Exception as e:
+                    logger.warning(f"Failed to decode GOOGLE_CREDENTIALS_JSON_B64: {e}")
 
             if service_account_json:
                 try:
