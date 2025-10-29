@@ -68,13 +68,111 @@ class GoogleDriveManager:
             logger.error(f"Failed to authenticate with Google Drive: {e}")
             return False
     
-    def upload_file(self, file_path: str, folder_id: Optional[str] = None) -> Optional[str]:
+    def file_exists(self, file_name: str, folder_id: Optional[str] = None) -> Optional[str]:
         """
-        Upload a file to Google Drive.
+        Check if a file already exists in Google Drive.
+        
+        Args:
+            file_name: Name of the file to check
+            folder_id: Optional Google Drive folder ID to search in
+        
+        Returns:
+            Google Drive file ID if exists, None if not found
+        """
+        try:
+            if not self.service:
+                if not self.authenticate():
+                    return None
+            
+            # Search for existing file
+            query = f"name='{file_name}' and trashed=false"
+            if folder_id:
+                query += f" and '{folder_id}' in parents"
+            
+            results = self.service.files().list(q=query, fields="files(id, name, modifiedTime, size)").execute()
+            files = results.get('files', [])
+            
+            if files:
+                file_id = files[0]['id']
+                modified_time = files[0].get('modifiedTime', 'Unknown')
+                file_size = files[0].get('size', 'Unknown')
+                logger.info(f"File already exists in Google Drive: {file_name} (ID: {file_id}, Modified: {modified_time}, Size: {file_size})")
+                return file_id
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Failed to check if file exists in Google Drive: {e}")
+            return None
+    
+    def should_upload_file(self, file_path: str, folder_id: Optional[str] = None) -> tuple[bool, Optional[str]]:
+        """
+        Determine if a file should be uploaded based on existence and modification time.
+        
+        Args:
+            file_path: Path to the local file
+            folder_id: Optional Google Drive folder ID to check in
+        
+        Returns:
+            Tuple of (should_upload, existing_file_id)
+        """
+        try:
+            file_name = os.path.basename(file_path)
+            existing_file_id = self.file_exists(file_name, folder_id)
+            
+            if not existing_file_id:
+                return True, None
+            
+            # Check if local file is newer than Google Drive file
+            if not os.path.exists(file_path):
+                logger.warning(f"Local file {file_path} does not exist, skipping upload")
+                return False, existing_file_id
+            
+            local_mtime = os.path.getmtime(file_path)
+            
+            try:
+                # Get Google Drive file metadata
+                file_metadata = self.service.files().get(
+                    fileId=existing_file_id, 
+                    fields="modifiedTime, size"
+                ).execute()
+                
+                gdrive_modified = file_metadata.get('modifiedTime', '')
+                if gdrive_modified:
+                    from datetime import datetime
+                    import pytz
+                    
+                    # Parse Google Drive timestamp
+                    gdrive_time = datetime.fromisoformat(gdrive_modified.replace('Z', '+00:00'))
+                    local_time = datetime.fromtimestamp(local_mtime, tz=pytz.UTC)
+                    
+                    if local_time > gdrive_time:
+                        logger.info(f"Local file {file_name} is newer than Google Drive version, will update")
+                        return True, existing_file_id
+                    else:
+                        logger.info(f"Google Drive file {file_name} is up to date, skipping upload")
+                        return False, existing_file_id
+                else:
+                    # If we can't compare times, upload anyway
+                    logger.info(f"Cannot compare modification times for {file_name}, will upload")
+                    return True, existing_file_id
+                    
+            except Exception as e:
+                logger.warning(f"Could not compare file timestamps for {file_name}: {e}")
+                return True, existing_file_id
+                
+        except Exception as e:
+            logger.error(f"Failed to determine if file should be uploaded: {e}")
+            return True, None
+    
+    def upload_file(self, file_path: str, folder_id: Optional[str] = None, overwrite: bool = False) -> Optional[str]:
+        """
+        Upload a file to Google Drive with intelligent duplicate detection.
         
         Args:
             file_path: Path to the file to upload
             folder_id: Optional Google Drive folder ID to upload to
+            overwrite: Whether to force overwrite existing files (ignores timestamp comparison)
         
         Returns:
             Google Drive file ID if successful, None if failed
@@ -84,21 +182,47 @@ class GoogleDriveManager:
                 if not self.authenticate():
                     return None
             
+            file_name = os.path.basename(file_path)
+            
+            if not os.path.exists(file_path):
+                logger.error(f"Local file {file_path} does not exist")
+                return None
+            
+            # Check if file should be uploaded (intelligent duplicate detection)
+            if not overwrite:
+                should_upload, existing_file_id = self.should_upload_file(file_path, folder_id)
+                if not should_upload:
+                    return existing_file_id
+            else:
+                existing_file_id = self.file_exists(file_name, folder_id)
+            
             file_metadata = {
-                'name': os.path.basename(file_path),
+                'name': file_name,
             }
             
             if folder_id:
                 file_metadata['parents'] = [folder_id]
             
             media = MediaFileUpload(file_path, resumable=True)
-            file = self.service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id'
-            ).execute()
             
-            logger.info(f"Successfully uploaded {file_path} to Google Drive. File ID: {file.get('id')}")
+            if existing_file_id:
+                # Update existing file
+                file = self.service.files().update(
+                    fileId=existing_file_id,
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id'
+                ).execute()
+                logger.info(f"Successfully updated {file_path} in Google Drive. File ID: {file.get('id')}")
+            else:
+                # Create new file
+                file = self.service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id'
+                ).execute()
+                logger.info(f"Successfully uploaded {file_path} to Google Drive. File ID: {file.get('id')}")
+            
             return file.get('id')
             
         except Exception as e:
@@ -240,3 +364,110 @@ class GoogleDriveManager:
         except Exception as e:
             logger.error(f"Failed to create Google Drive folder structure: {e}")
             return None
+    
+    def get_upload_stats(self, folder_id: Optional[str] = None) -> dict:
+        """
+        Get statistics about files in a Google Drive folder.
+        
+        Args:
+            folder_id: Optional Google Drive folder ID to get stats for
+        
+        Returns:
+            Dictionary with file statistics
+        """
+        try:
+            if not self.service:
+                if not self.authenticate():
+                    return {}
+            
+            query = "trashed=false"
+            if folder_id:
+                query += f" and '{folder_id}' in parents"
+            
+            results = self.service.files().list(
+                q=query, 
+                fields="files(id, name, size, modifiedTime, mimeType)"
+            ).execute()
+            
+            files = results.get('files', [])
+            
+            stats = {
+                'total_files': len(files),
+                'total_size': 0,
+                'csv_files': 0,
+                'folders': 0,
+                'files_by_type': {}
+            }
+            
+            for file in files:
+                mime_type = file.get('mimeType', '')
+                file_size = int(file.get('size', 0))
+                
+                stats['total_size'] += file_size
+                
+                if mime_type == 'application/vnd.google-apps.folder':
+                    stats['folders'] += 1
+                elif mime_type == 'text/csv' or file.get('name', '').endswith('.csv'):
+                    stats['csv_files'] += 1
+                
+                # Count by file extension
+                file_name = file.get('name', '')
+                if '.' in file_name:
+                    ext = file_name.split('.')[-1].lower()
+                    stats['files_by_type'][ext] = stats['files_by_type'].get(ext, 0) + 1
+            
+            return stats
+            
+        except Exception as e:
+            logger.error(f"Failed to get upload stats: {e}")
+            return {}
+    
+    def check_file_exists_in_gdrive(self, year: str, month: str, gender: str, division: str, day: str = None) -> tuple[bool, Optional[str]]:
+        """
+        Check if a file already exists in Google Drive for the given parameters.
+        
+        Args:
+            year: Year (e.g., "2025")
+            month: Month (e.g., "02")
+            gender: Gender (e.g., "women")
+            division: Division (e.g., "d3")
+            day: Day (e.g., "06") - optional, if not provided checks for any file in the month
+        
+        Returns:
+            Tuple of (exists, file_id)
+        """
+        try:
+            if not self.service:
+                if not self.authenticate():
+                    return False, None
+            
+            # Create folder structure to get the target folder ID
+            folder_id = self.create_folder_structure(
+                year, month, gender, division, self.config.google_drive_folder_id
+            )
+            
+            if not folder_id:
+                return False, None
+            
+            if day:
+                # Check for specific day file
+                file_name = f"basketball_{gender}_{division}_{year}_{month}_{day}.csv"
+                existing_file_id = self.file_exists(file_name, folder_id)
+                return existing_file_id is not None, existing_file_id
+            else:
+                # Check for any files in the month folder
+                query = f"'{folder_id}' in parents and trashed=false and name contains 'basketball_{gender}_{division}_{year}_{month}'"
+                results = self.service.files().list(q=query, fields="files(id, name)").execute()
+                files = results.get('files', [])
+                
+                if files:
+                    # Return the most recent file
+                    file_id = files[0]['id']
+                    logger.info(f"Found existing files in Google Drive for {gender} {division} {year}-{month}: {len(files)} files")
+                    return True, file_id
+                
+                return False, None
+                
+        except Exception as e:
+            logger.error(f"Failed to check Google Drive for existing files: {e}")
+            return False, None

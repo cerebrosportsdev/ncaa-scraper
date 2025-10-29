@@ -100,7 +100,7 @@ class BaseScraper(ABC):
     
     def upload_to_gdrive(self, file_path: str, year: str, month: str, gender: str, division: str) -> bool:
         """
-        Upload file to Google Drive.
+        Upload file to Google Drive with intelligent duplicate detection.
         
         Args:
             file_path: Path to file to upload
@@ -113,13 +113,42 @@ class BaseScraper(ABC):
             True if successful, False otherwise
         """
         try:
+            self.logger.info(f"Preparing to upload {file_path} to Google Drive...")
+            
+            # Create folder structure
             folder_id = self.google_drive.create_folder_structure(
                 year, month, gender, division, self.config.google_drive_folder_id
             )
-            if folder_id:
-                file_id = self.google_drive.upload_file(file_path, folder_id)
-                return file_id is not None
-            return False
+            
+            if not folder_id:
+                self.logger.error("Failed to create Google Drive folder structure")
+                return False
+            
+            # Check if file should be uploaded (intelligent duplicate detection)
+            should_upload, existing_file_id = self.google_drive.should_upload_file(file_path, folder_id)
+            
+            if not should_upload:
+                self.logger.info(f"File already exists and is up-to-date in Google Drive, skipping upload")
+                return True
+            
+            # Upload the file
+            file_id = self.google_drive.upload_file(file_path, folder_id)
+            
+            if file_id:
+                self.logger.info(f"Successfully uploaded to Google Drive: {file_path} (ID: {file_id})")
+                
+                # Get upload stats for the folder
+                stats = self.google_drive.get_upload_stats(folder_id)
+                if stats:
+                    self.logger.info(f"Google Drive folder stats: {stats['total_files']} files, "
+                                   f"{stats['csv_files']} CSV files, "
+                                   f"{stats['total_size'] / 1024 / 1024:.2f} MB total")
+                
+                return True
+            else:
+                self.logger.error(f"Failed to upload {file_path} to Google Drive")
+                return False
+                
         except Exception as e:
             self.logger.error(f"Error uploading to Google Drive: {e}")
             return False

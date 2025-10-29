@@ -115,6 +115,11 @@ def _run_scraping_session(scraper: NCAAScraper, scraping_config: ScrapingConfig)
         all_urls.extend(urls)
         current_date += timedelta(days=1)
     
+    # Pre-check Google Drive for existing files (if enabled)
+    if scraping_config.upload_to_gdrive:
+        logger.info("Pre-checking Google Drive for existing files...")
+        _precheck_google_drive(scraper, all_urls)
+    
     # Scrape each URL
     for url in all_urls:
         try:
@@ -122,6 +127,43 @@ def _run_scraping_session(scraper: NCAAScraper, scraping_config: ScrapingConfig)
         except Exception as e:
             logger.error(f"Error processing URL {url}: {e}")
             continue
+
+
+def _precheck_google_drive(scraper: NCAAScraper, urls: List[str]):
+    """Pre-check Google Drive for existing files to provide summary."""
+    try:
+        from .utils import parse_url_components
+        
+        existing_count = 0
+        total_count = len(urls)
+        
+        for url in urls:
+            try:
+                components = parse_url_components(url)
+                year = components['year']
+                month = components['month']
+                day = components['day']
+                gender = components['gender']
+                division = components['division']
+                
+                gdrive_exists, _ = scraper.google_drive.check_file_exists_in_gdrive(
+                    year, month, gender, division, day
+                )
+                
+                if gdrive_exists:
+                    existing_count += 1
+                    logger.info(f"✓ {gender} {division} {year}-{month}-{day} already exists in Google Drive")
+                else:
+                    logger.info(f"✗ {gender} {division} {year}-{month}-{day} needs scraping")
+                    
+            except Exception as e:
+                logger.warning(f"Error checking Google Drive for {url}: {e}")
+                continue
+        
+        logger.info(f"Google Drive pre-check complete: {existing_count}/{total_count} files already exist")
+        
+    except Exception as e:
+        logger.error(f"Error during Google Drive pre-check: {e}")
 
 
 if __name__ == "__main__":

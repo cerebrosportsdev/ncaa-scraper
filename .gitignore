@@ -128,7 +128,7 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# ===== PROJECT SPECIFIC =====
+# ===== NCAA SCRAPER PROJECT SPECIFIC =====
 
 # Sensitive files (CRITICAL - NEVER COMMIT THESE)
 credentials.json
@@ -138,6 +138,19 @@ token.pickle
 .env
 config.ini
 secrets.json
+service_account.json
+google_credentials.json
+
+# Google Drive authentication
+token.pickle
+credentials.json
+service_account*.json
+
+# Chrome/WebDriver files
+chrome-session/
+chromedriver*
+geckodriver*
+selenium-debug.log
 
 # Data files
 scraped_data/
@@ -147,6 +160,11 @@ scraped_data/
 *.xls
 data/
 datasets/
+
+# NCAA Scraper specific data
+ncaa_page_source.html
+debug_*.py
+test_*.py
 
 # Logs
 *.log
@@ -247,3 +265,10 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# Docker
+.dockerignore
+docker-compose.override.yml
+
+# GitHub Actions
+.github/workflows/*.yml.bak

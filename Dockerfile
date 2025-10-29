@@ -46,6 +46,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy application code
 COPY . .
 
+# Copy .env file if it exists
+COPY .env* ./
+
 # Create directories for data and logs
 RUN mkdir -p /app/data /app/logs
 

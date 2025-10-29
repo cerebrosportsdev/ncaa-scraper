@@ -49,10 +49,19 @@ class NCAAScraper(BaseScraper):
             # Create CSV path
             csv_path = self.file_manager.get_csv_path(year, month, day, gender, division)
             
-            # Check if data already exists
+            # Check if data already exists locally
             if self.file_manager.file_exists_and_has_content(csv_path):
-                self.logger.info(f"Data for {gender} {division} on {year}-{month}-{day} already exists, skipping...")
+                self.logger.info(f"Data for {gender} {division} on {year}-{month}-{day} already exists locally, skipping...")
                 return []
+            
+            # Check if data already exists in Google Drive (if enabled)
+            if self.config.upload_to_gdrive:
+                gdrive_exists, gdrive_file_id = self.google_drive.check_file_exists_in_gdrive(
+                    year, month, gender, division, day
+                )
+                if gdrive_exists:
+                    self.logger.info(f"Data for {gender} {division} on {year}-{month}-{day} already exists in Google Drive, skipping...")
+                    return []
             
             self.logger.info(f"Processing: {csv_path}")
             
