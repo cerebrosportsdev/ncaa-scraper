@@ -94,34 +94,35 @@ jobs:
         
     - name: Run NCAA Scraper with Docker
       run: |
-        # Build command based on inputs
-        CMD="python main.py"
+        # Build arguments based on inputs
+        # Note: ENTRYPOINT in Dockerfile already includes "python main.py"
+        ARGS=""
         
         # Add date if provided
         if [ -n "${{ github.event.inputs.date }}" ]; then
-          CMD="$CMD --date ${{ github.event.inputs.date }}"
+          ARGS="$ARGS --date ${{ github.event.inputs.date }}"
         fi
         
         # Add divisions
         if [ -n "${{ github.event.inputs.divisions }}" ]; then
-          CMD="$CMD --divisions ${{ github.event.inputs.divisions }}"
+          ARGS="$ARGS --divisions ${{ github.event.inputs.divisions }}"
         else
-          CMD="$CMD --divisions d1 d2 d3"
+          ARGS="$ARGS --divisions d1 d2 d3"
         fi
         
         # Add genders
         if [ -n "${{ github.event.inputs.genders }}" ]; then
-          CMD="$CMD --genders ${{ github.event.inputs.genders }}"
+          ARGS="$ARGS --genders ${{ github.event.inputs.genders }}"
         else
-          CMD="$CMD --genders men women"
+          ARGS="$ARGS --genders men women"
         fi
         
         # Add backfill flag if requested
         if [ "${{ github.event.inputs.backfill }}" = "true" ]; then
-          CMD="$CMD --backfill"
+          ARGS="$ARGS --backfill"
         fi
         
-        echo "Running command: $CMD"
+        echo "Running command: python main.py$ARGS"
         
         # Run the Docker container
         docker run --rm \
@@ -140,7 +141,7 @@ jobs:
           -e WDM_LOCAL=1 \
           -e UPLOAD_TO_GDRIVE=true \
           ncaa-scraper:latest \
-          $CMD
+          $ARGS
         
     - name: Upload scraped data as artifact
       uses: actions/upload-artifact@v4
