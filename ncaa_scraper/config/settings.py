@@ -31,6 +31,9 @@ class ScraperConfig:
     # Logging
     log_level: str = "INFO"
     
+    # Google Drive upload settings
+    upload_to_gdrive: bool = False
+    
     @classmethod
     def from_env(cls) -> 'ScraperConfig':
         """Create configuration from environment variables."""
@@ -46,7 +49,8 @@ class ScraperConfig:
             output_dir=os.getenv('OUTPUT_DIR', DEFAULT_OUTPUT_DIR),
             wait_timeout=int(os.getenv('WAIT_TIMEOUT', '15')),
             sleep_time=int(os.getenv('SLEEP_TIME', '2')),
-            log_level=os.getenv('LOG_LEVEL', 'INFO')
+            log_level=os.getenv('LOG_LEVEL', 'INFO'),
+            upload_to_gdrive=os.getenv('UPLOAD_TO_GDRIVE', 'false').lower() == 'true'
         )
     
     def validate(self) -> bool:

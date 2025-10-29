@@ -56,8 +56,8 @@ class NCAAScraper(BaseScraper):
             
             self.logger.info(f"Processing: {csv_path}")
             
-            # Initialize driver
-            self.driver = SeleniumUtils.create_driver()
+            # Initialize driver with retry mechanism
+            self.driver = SeleniumUtils.create_driver(headless=True, max_retries=3)
             
             try:
                 # Load scoreboard page
@@ -110,7 +110,7 @@ class NCAAScraper(BaseScraper):
                 
             finally:
                 if self.driver:
-                    self.driver.quit()
+                    SeleniumUtils.safe_quit_driver(self.driver)
                     self.driver = None
                     
         except Exception as e:
