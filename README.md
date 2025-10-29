@@ -247,3 +247,190 @@ LOG_LEVEL=DEBUG python main.py
 ## 📄 License
 
 MIT License
+
+---
+
+## 🚀 Default Behavior: All Divisions, All Genders, Yesterday's Games
+
+```bash
+docker run --rm ncaa-scraper
+```
+
+That's it — the scraper will automatically:
+
+- Check Google Drive for existing files
+- Scrape all divisions (D1, D2, D3)
+- Scrape both genders (Men, Women)
+- Use yesterday's date automatically
+- Upload to Google Drive with duplicate detection
+
+### What Gets Scraped
+
+| Division | Gender | Example Date |
+|----------|--------|--------------|
+| D1 | Men | 2025-02-14 |
+| D1 | Women | 2025-02-14 |
+| D2 | Men | 2025-02-14 |
+| D2 | Women | 2025-02-14 |
+| D3 | Men | 2025-02-14 |
+| D3 | Women | 2025-02-14 |
+
+### Example Output
+
+```
+2025-10-29 04:30:12,011 - INFO - Pre-checking Google Drive for existing files...
+2025-10-29 04:30:12,015 - INFO - ✓ men d1 2025-02-14 already exists in Google Drive
+2025-10-29 04:30:12,016 - INFO - ✗ women d1 2025-02-14 needs scraping
+2025-10-29 04:30:12,017 - INFO - ✓ men d2 2025-02-14 already exists in Google Drive
+2025-10-29 04:30:12,018 - INFO - ✗ women d2 2025-02-14 needs scraping
+2025-10-29 04:30:12,019 - INFO - ✓ men d3 2025-02-14 already exists in Google Drive
+2025-10-29 04:30:12,020 - INFO - ✗ women d3 2025-02-14 needs scraping
+2025-10-29 04:30:12,021 - INFO - Google Drive pre-check complete: 3/6 files already exist
+```
+
+### Customization Options
+
+```bash
+# Specific date
+docker run --rm ncaa-scraper --date 2025/02/15
+
+# Specific division
+docker run --rm ncaa-scraper --divisions d3
+
+# Specific gender
+docker run --rm ncaa-scraper --genders women
+
+# Disable Google Drive
+docker run --rm ncaa-scraper --no-upload-gdrive
+```
+
+---
+
+## Google Drive Upload is Now Default
+
+Google Drive upload is enabled by default for all scraping operations:
+
+- No need to add `--upload-gdrive`
+- Automatic duplicate detection before scraping
+- Pre-checking of Google Drive before starting
+- Intelligent uploads (only new/updated files)
+
+### Commands
+
+```bash
+# Default behavior (uploads enabled)
+docker run --rm ncaa-scraper --date 2025/02/06 --divisions d3 --genders women
+
+# Disable Google Drive if needed
+docker run --rm ncaa-scraper --date 2025/02/06 --divisions d3 --genders women --no-upload-gdrive
+
+# Explicit enable still works
+docker run --rm ncaa-scraper --date 2025/02/06 --divisions d3 --genders women --upload-gdrive
+```
+
+### Environment Variables
+
+```env
+UPLOAD_TO_GDRIVE=true   # default
+# UPLOAD_TO_GDRIVE=false to disable
+```
+
+---
+
+## Google Drive Duplicate Detection
+
+The scraper prevents unnecessary uploads by:
+
+1. Checking for existing files in the target folder
+2. Comparing local vs Google Drive modification timestamps (UTC)
+3. Smartly deciding to upload, update, or skip
+
+### Benefits
+
+- Faster runs and reduced API calls
+- No duplicates; always keeps most recent versions
+- Detailed logging and upload stats
+
+### Example Log Output
+
+```
+2025-10-29 04:30:12,015 - INFO - Google Drive file ... is up to date, skipping upload
+```
+
+```env
+# Required env for GDrive
+UPLOAD_TO_GDRIVE=true
+GOOGLE_CLIENT_ID=your_client_id
+GOOGLE_CLIENT_SECRET=your_client_secret
+GOOGLE_DRIVE_FOLDER_ID=your_base_folder_id
+```
+
+---
+
+## Google Drive Setup Guide
+
+1. Create a Google Cloud project and enable Google Drive API
+2. Create OAuth credentials (Desktop application)
+3. Set environment variables in `.env`
+4. Run the scraper; token saved to `token.pickle`
+
+```env
+GOOGLE_CLIENT_ID=your_client_id_here
+GOOGLE_CLIENT_SECRET=your_client_secret_here
+GOOGLE_REDIRECT_URI=urn:ietf:wg:oauth:2.0:oob
+GOOGLE_DRIVE_FOLDER_ID=your_base_folder_id_here
+GOOGLE_TOKEN_FILE=token.pickle
+UPLOAD_TO_GDRIVE=true
+OUTPUT_DIR=scraped_data
+LOG_LEVEL=INFO
+```
+
+---
+
+## Selenium WebDriver Fixes
+
+Key fixes for Chrome/ChromeDriver reliability:
+
+- WebDriverManager for automatic driver versioning
+- Retry mechanism on driver creation with cleanup
+- Improved headless and Docker stability flags
+- Safe driver quit and resource cleanup
+
+Local:
+
+```bash
+pip install -r requirements.txt
+python main.py
+```
+
+Docker:
+
+```bash
+docker build -t ncaa-scraper .
+docker run ncaa-scraper
+```
+
+---
+
+## GitHub Actions Setup Guide
+
+Required repository secrets:
+
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_REDIRECT_URI`
+- `GOOGLE_DRIVE_FOLDER_ID`, `GOOGLE_CREDENTIALS_JSON`
+- `DISCORD_WEBHOOK_URL` (optional)
+
+Features:
+
+- Daily schedule at 6:00 AM UTC
+- Manual triggers with inputs (date/divisions/genders/backfill)
+- Artifacts for data and logs; automatic cleanup
+
+Change schedule in `.github/workflows/ncaa-scraper.yml`:
+
+```yaml
+schedule:
+  - cron: '0 6 * * *'
+```
+
+See workflows: `ncaa-scraper.yml` and `ncaa-scraper-docker.yml`.

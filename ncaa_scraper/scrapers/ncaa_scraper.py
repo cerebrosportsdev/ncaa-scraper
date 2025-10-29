@@ -66,7 +66,19 @@ class NCAAScraper(BaseScraper):
             self.logger.info(f"Processing: {csv_path}")
             
             # Initialize driver with retry mechanism
-            self.driver = SeleniumUtils.create_driver(headless=True, max_retries=3)
+            try:
+                self.driver = SeleniumUtils.create_driver(headless=True, max_retries=3)
+            except Exception as e:
+                error_msg = f"Failed to initialize WebDriver: {e}"
+                self.logger.error(error_msg)
+                self.send_notification(
+                    error_msg,
+                    ErrorType.ERROR,
+                    division=division,
+                    date=f"{year}-{month}-{day}",
+                    gender=gender
+                )
+                return []
             
             try:
                 # Load scoreboard page
@@ -76,7 +88,15 @@ class NCAAScraper(BaseScraper):
                 # Get game links
                 game_links = self._extract_game_links()
                 if not game_links:
-                    self.logger.warning(f"No valid game links found for {url}")
+                    no_links_msg = f"No valid game links found for {url}"
+                    self.logger.warning(no_links_msg)
+                    self.send_notification(
+                        no_links_msg,
+                        ErrorType.INFO,
+                        division=division,
+                        date=f"{year}-{month}-{day}",
+                        gender=gender
+                    )
                     return []
                 
                 # Filter out already visited links
@@ -164,12 +184,46 @@ class NCAAScraper(BaseScraper):
                         date=date,
                         gender=gender
                     )
-                else:
-                    self.logger.warning(f"No games found on scoreboard page: {url}")
+                    return False
+                
+                # Check for HTTP errors
+                http_error = SeleniumUtils.check_http_status(self.driver)
+                if http_error:
+                    self.logger.warning(f"{http_error} for {url}")
+                    self.send_notification(
+                        f"{http_error} for {url}",
+                        ErrorType.ERROR,
+                        division=division,
+                        date=date,
+                        gender=gender
+                    )
+                    return False
+                
+                # No games found on scoreboard page - send notification
+                no_games_msg = f"No games found on scoreboard page: {url}"
+                self.logger.warning(no_games_msg)
+                self.send_notification(
+                    no_games_msg,
+                    ErrorType.INFO,
+                    division=division,
+                    date=date,
+                    gender=gender
+                )
                 return False
                 
+        except WebDriverException as e:
+            error_msg = f"Selenium WebDriver error loading scoreboard page {url}: {e}"
+            self.logger.error(error_msg)
+            self.send_notification(
+                error_msg,
+                ErrorType.ERROR,
+                division=division,
+                date=date,
+                gender=gender
+            )
+            return False
         except Exception as e:
-            error_msg = f"Failed to load scoreboard page {url}: {e}"
+            error_msg = f"Unexpected error loading scoreboard page {url}: {e}"
             self.logger.error(error_msg)
             self.send_notification(
                 error_msg,
@@ -186,8 +240,21 @@ class NCAAScraper(BaseScraper):
             box_scores = self.driver.find_elements(By.CLASS_NAME, "gamePod-link")
             game_links = [box_score.get_attribute('href') for box_score in box_scores if box_score.get_attribute('href')]
             return game_links
+        except WebDriverException as e:
+            error_msg = f"Selenium error finding game links: {e}"
+            self.logger.error(error_msg)
+            self.send_notification(
+                error_msg,
+                ErrorType.ERROR
+            )
+            return []
         except Exception as e:
-            self.logger.error(f"Error finding game links: {e}")
+            error_msg = f"Unexpected error finding game links: {e}"
+            self.logger.error(error_msg)
+            self.send_notification(
+                error_msg,
+                ErrorType.ERROR
+            )
             return []
     
     def _scrape_single_game(

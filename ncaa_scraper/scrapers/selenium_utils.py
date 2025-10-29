@@ -383,8 +383,86 @@ class SeleniumUtils:
             if "unavailable" in driver.page_source.lower():
                 return "Content unavailable"
             
+            # Check for 500 server error
+            if "500" in driver.title or "internal server error" in driver.title.lower():
+                return "Internal server error (500)"
+            
+            # Check for 403 forbidden error
+            if "403" in driver.title or "forbidden" in driver.title.lower():
+                return "Access forbidden (403)"
+            
+            # Check for 401 unauthorized error
+            if "401" in driver.title or "unauthorized" in driver.title.lower():
+                return "Unauthorized access (401)"
+            
+            # Check for timeout errors
+            if "timeout" in driver.title.lower() or "time out" in driver.title.lower():
+                return "Page timeout error"
+            
+            # Check for maintenance mode
+            if "maintenance" in driver.page_source.lower() or "under maintenance" in driver.page_source.lower():
+                return "Site under maintenance"
+            
+            # Check for rate limiting
+            if "rate limit" in driver.page_source.lower() or "too many requests" in driver.page_source.lower():
+                return "Rate limit exceeded"
+            
+            # Check for network errors
+            if "network error" in driver.page_source.lower() or "connection error" in driver.page_source.lower():
+                return "Network connection error"
+            
+            # Check for JavaScript errors in console
+            try:
+                logs = driver.get_log('browser')
+                for log in logs:
+                    if log['level'] == 'SEVERE' and any(keyword in log['message'].lower() for keyword in ['error', 'failed', 'exception']):
+                        return f"JavaScript error detected: {log['message'][:100]}"
+            except Exception:
+                pass  # Ignore if we can't get console logs
+            
             return None
             
         except Exception as e:
             logger.warning(f"Error checking for page errors: {e}")
+            return None
+    
+    @staticmethod
+    def check_http_status(driver: webdriver.Chrome) -> Optional[str]:
+        """
+        Check HTTP status code and network errors.
+        
+        Args:
+            driver: WebDriver instance
+        
+        Returns:
+            Error message if HTTP error found, None otherwise
+        """
+        try:
+            # Check if we can get the current URL and status
+            current_url = driver.current_url
+            
+            # Check for common error URLs
+            if "error" in current_url.lower() or "404" in current_url.lower():
+                return f"Error URL detected: {current_url}"
+            
+            # Try to get HTTP status from performance logs
+            try:
+                logs = driver.get_log('performance')
+                for log in logs:
+                    message = log.get('message', '')
+                    if 'Network.responseReceived' in message:
+                        # Parse the response data
+                        import json
+                        response_data = json.loads(message)
+                        if 'response' in response_data.get('message', {}):
+                            status = response_data['message']['response'].get('status', 200)
+                            if status >= 400:
+                                return f"HTTP {status} error detected"
+            except Exception:
+                pass  # Ignore if we can't get performance logs
+            
+            return None
+            
+        except Exception as e:
+            logger.warning(f"Error checking HTTP status: {e}")
             return None

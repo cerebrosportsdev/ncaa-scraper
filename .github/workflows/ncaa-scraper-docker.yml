@@ -1,0 +1,159 @@
+name: NCAA Basketball Scraper (Docker)
+
+on:
+  # Run daily at 6 AM UTC (adjust timezone as needed)
+  schedule:
+    - cron: '0 6 * * *'
+  
+  # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Date to scrape (YYYY/MM/DD format, leave empty for yesterday)'
+        required: false
+        type: string
+      divisions:
+        description: 'Divisions to scrape (space-separated: d1 d2 d3)'
+        required: false
+        default: 'd1 d2 d3'
+        type: string
+      genders:
+        description: 'Genders to scrape (space-separated: men women)'
+        required: false
+        default: 'men women'
+        type: string
+      backfill:
+        description: 'Run backfill mode'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  PYTHONUNBUFFERED: 1
+  OUTPUT_DIR: /app/data
+  DISPLAY: :99
+  CHROME_BIN: /usr/bin/google-chrome
+  CHROME_PATH: /usr/bin/google-chrome
+  DOCKER_CONTAINER: true
+  WDM_LOG_LEVEL: 0
+  WDM_LOCAL: 1
+  UPLOAD_TO_GDRIVE: true
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        push: false
+        tags: ncaa-scraper:latest
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        
+    - name: Set up Google Drive credentials
+      run: |
+        # Create credentials.json from secrets
+        echo '${{ secrets.GOOGLE_CREDENTIALS_JSON }}' > credentials.json
+        
+        # Create .env file with all required environment variables
+        cat > .env << EOF
+        GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+        GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+        GOOGLE_REDIRECT_URI=${{ secrets.GOOGLE_REDIRECT_URI }}
+        GOOGLE_DRIVE_FOLDER_ID=${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+        DISCORD_WEBHOOK_URL=${{ secrets.DISCORD_WEBHOOK_URL }}
+        OUTPUT_DIR=/app/data
+        LOG_LEVEL=INFO
+        UPLOAD_TO_GDRIVE=true
+        EOF
+        
+    - name: Run NCAA Scraper with Docker
+      run: |
+        # Build command based on inputs
+        CMD="python main.py"
+        
+        # Add date if provided
+        if [ -n "${{ github.event.inputs.date }}" ]; then
+          CMD="$CMD --date ${{ github.event.inputs.date }}"
+        fi
+        
+        # Add divisions
+        if [ -n "${{ github.event.inputs.divisions }}" ]; then
+          CMD="$CMD --divisions ${{ github.event.inputs.divisions }}"
+        else
+          CMD="$CMD --divisions d1 d2 d3"
+        fi
+        
+        # Add genders
+        if [ -n "${{ github.event.inputs.genders }}" ]; then
+          CMD="$CMD --genders ${{ github.event.inputs.genders }}"
+        else
+          CMD="$CMD --genders men women"
+        fi
+        
+        # Add backfill flag if requested
+        if [ "${{ github.event.inputs.backfill }}" = "true" ]; then
+          CMD="$CMD --backfill"
+        fi
+        
+        echo "Running command: $CMD"
+        
+        # Run the Docker container
+        docker run --rm \
+          --name ncaa-scraper \
+          -v $(pwd)/data:/app/data \
+          -v $(pwd)/logs:/app/logs \
+          -v $(pwd)/credentials.json:/app/credentials.json \
+          -v $(pwd)/.env:/app/.env \
+          -v $(pwd)/token.pickle:/app/token.pickle \
+          -e PYTHONUNBUFFERED=1 \
+          -e OUTPUT_DIR=/app/data \
+          -e DISPLAY=:99 \
+          -e CHROME_BIN=/usr/bin/google-chrome \
+          -e CHROME_PATH=/usr/bin/google-chrome \
+          -e DOCKER_CONTAINER=true \
+          -e WDM_LOG_LEVEL=0 \
+          -e WDM_LOCAL=1 \
+          -e UPLOAD_TO_GDRIVE=true \
+          ncaa-scraper:latest \
+          $CMD
+        
+    - name: Upload scraped data as artifact
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: scraped-data-${{ github.run_number }}
+        path: data/
+        retention-days: 30
+        
+    - name: Upload logs as artifact
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: logs-${{ github.run_number }}
+        path: logs/
+        retention-days: 7
+        
+    - name: Notify on failure
+      if: failure()
+      run: |
+        echo "Scraping failed! Check the logs for details."
+        # The Discord notification will be sent automatically by the scraper
+        # if DISCORD_WEBHOOK_URL is configured
+        
+    - name: Cleanup
+      if: always()
+      run: |
+        # Remove sensitive files
+        rm -f credentials.json .env token.pickle
+        # Clean up any remaining containers
+        docker container prune -f

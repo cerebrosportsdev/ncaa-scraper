@@ -20,12 +20,13 @@ def main():
     parser.add_argument('--date', type=str, help='Date in YYYY/MM/DD format (default: yesterday)')
     parser.add_argument('--output-dir', type=str, default='scraped_data', help='Output directory for CSV files')
     parser.add_argument('--backfill', action='store_true', help='Run backfill for specific dates')
-    parser.add_argument('--upload-gdrive', action='store_true', help='Upload scraped data to Google Drive')
+    parser.add_argument('--upload-gdrive', action='store_true', help='Upload scraped data to Google Drive (default: enabled)')
+    parser.add_argument('--no-upload-gdrive', action='store_true', help='Disable Google Drive upload')
     parser.add_argument('--gdrive-folder-id', type=str, help='Google Drive folder ID to upload to (optional)')
-    parser.add_argument('--divisions', nargs='+', choices=['d1', 'd2', 'd3'], default=['d3'], 
-                       help='Divisions to scrape (default: d3)')
-    parser.add_argument('--genders', nargs='+', choices=['men', 'women'], default=['women'], 
-                       help='Genders to scrape (default: women)')
+    parser.add_argument('--divisions', nargs='+', choices=['d1', 'd2', 'd3'], default=['d1', 'd2', 'd3'], 
+                       help='Divisions to scrape (default: all divisions)')
+    parser.add_argument('--genders', nargs='+', choices=['men', 'women'], default=['men', 'women'], 
+                       help='Genders to scrape (default: both genders)')
     
     args = parser.parse_args()
     
@@ -41,6 +42,8 @@ def main():
         config.google_drive_folder_id = args.gdrive_folder_id
     if args.upload_gdrive:
         config.upload_to_gdrive = True
+    if args.no_upload_gdrive:
+        config.upload_to_gdrive = False
     
     # Convert division and gender strings to enums
     divisions = [Division(d) for d in args.divisions]

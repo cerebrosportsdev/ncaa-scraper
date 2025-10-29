@@ -32,7 +32,7 @@ class ScraperConfig:
     log_level: str = "INFO"
     
     # Google Drive upload settings
-    upload_to_gdrive: bool = False
+    upload_to_gdrive: bool = True
     
     @classmethod
     def from_env(cls) -> 'ScraperConfig':
@@ -50,7 +50,7 @@ class ScraperConfig:
             wait_timeout=int(os.getenv('WAIT_TIMEOUT', '15')),
             sleep_time=int(os.getenv('SLEEP_TIME', '2')),
             log_level=os.getenv('LOG_LEVEL', 'INFO'),
-            upload_to_gdrive=os.getenv('UPLOAD_TO_GDRIVE', 'false').lower() == 'true'
+            upload_to_gdrive=os.getenv('UPLOAD_TO_GDRIVE', 'true').lower() == 'true'
         )
     
     def validate(self) -> bool:

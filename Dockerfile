@@ -61,6 +61,7 @@ ENV CHROME_PATH=/usr/bin/google-chrome
 ENV DOCKER_CONTAINER=true
 ENV WDM_LOG_LEVEL=0
 ENV WDM_LOCAL=1
+ENV UPLOAD_TO_GDRIVE=true
 
 # Create directories for Chrome and WebDriverManager
 RUN mkdir -p /tmp/chrome-session /app/chrome-session && \
@@ -69,6 +70,6 @@ RUN mkdir -p /tmp/chrome-session /app/chrome-session && \
 # Set proper permissions for Chrome
 RUN chmod 755 /usr/bin/google-chrome
 
-# Default command
+# Default command - scrape all divisions and genders for yesterday with Google Drive
 ENTRYPOINT ["python", "main.py"]
-CMD []
+CMD ["--divisions", "d1", "d2", "d3", "--genders", "men", "women"]
