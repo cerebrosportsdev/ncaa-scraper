@@ -30,10 +30,8 @@ class NCAAScraper(BaseScraper):
     def scrape(self, url: str) -> List[GameData]:
         """
         Scrape NCAA box scores from a scoreboard URL.
-        
         Args:
             url: NCAA scoreboard URL
-        
         Returns:
             List of scraped game data
         """
@@ -45,26 +43,36 @@ class NCAAScraper(BaseScraper):
             day = components['day']
             gender = components['gender']
             division = components['division']
-            
-            # Create CSV path
             csv_path = self.file_manager.get_csv_path(year, month, day, gender, division)
-            
-            # Check if data already exists locally
+
+            # Track all game IDs for this date/gender across divisions in memory only
+            if not hasattr(self, '_scrape_session_game_ids'):
+                self._scrape_session_game_ids = {}
+            session_key = f"{year}_{month}_{day}_{gender}"
+            if session_key not in self._scrape_session_game_ids:
+                self._scrape_session_game_ids[session_key] = {}
+            all_game_ids = self._scrape_session_game_ids[session_key]
+
+            # Always overwrite local file if it exists
             if self.file_manager.file_exists_and_has_content(csv_path):
-                self.logger.info(f"Data for {gender} {division} on {year}-{month}-{day} already exists locally, skipping...")
-                return []
-            
-            # Check if data already exists in Google Drive (if enabled)
+                try:
+                    import os
+                    os.remove(csv_path)
+                    self.logger.info(f"Existing local file {csv_path} deleted for overwrite.")
+                except Exception as e:
+                    self.logger.warning(f"Could not delete local file {csv_path}: {e}")
+            # Always overwrite Google Drive file if it exists
             if self.config.upload_to_gdrive:
                 gdrive_exists, gdrive_file_id = self.google_drive.check_file_exists_in_gdrive(
                     year, month, gender, division, day
                 )
-                if gdrive_exists:
-                    self.logger.info(f"Data for {gender} {division} on {year}-{month}-{day} already exists in Google Drive, skipping...")
-                    return []
-            
+                if gdrive_exists and gdrive_file_id:
+                    try:
+                        self.google_drive.delete_file_from_gdrive(gdrive_file_id)
+                        self.logger.info(f"Existing Google Drive file for {gender} {division} {year}-{month}-{day} deleted for overwrite.")
+                    except Exception as e:
+                        self.logger.warning(f"Could not delete Google Drive file: {e}")
             self.logger.info(f"Processing: {csv_path}")
-            
             # Initialize driver with retry mechanism
             try:
                 self.driver = SeleniumUtils.create_driver(headless=True, max_retries=3)
@@ -79,12 +87,10 @@ class NCAAScraper(BaseScraper):
                     gender=gender
                 )
                 return []
-            
             try:
                 # Load scoreboard page
                 if not self._load_scoreboard_page(url, division, gender, f"{year}-{month}-{day}"):
                     return []
-                
                 # Get game links
                 game_links = self._extract_game_links()
                 if not game_links:
@@ -98,26 +104,83 @@ class NCAAScraper(BaseScraper):
                         gender=gender
                     )
                     return []
-                
-                # Filter out already visited links
-                new_links = [link for link in game_links if link not in self.visited_links]
-                skipped_count = len(game_links) - len(new_links)
-                
-                if skipped_count > 0:
-                    self.logger.info(f"Found {len(game_links)} total games, {skipped_count} already visited, {len(new_links)} new games to scrape")
-                else:
-                    self.logger.info(f"Found {len(game_links)} games to scrape")
-                
-                # Scrape each game
+                self.logger.info(f"Found {len(game_links)} games to scrape for {division}")
                 scraped_games = []
-                for game_link in new_links:
+                new_game_ids = set()
+                for game_link in game_links:
                     try:
                         game_data = self._scrape_single_game(
                             game_link, year, month, day, gender, division, csv_path
                         )
                         if game_data:
+                            # Mark duplicate if game_id already in all_game_ids
+                            is_duplicate = game_data.game_id in all_game_ids
+                            df = game_data.to_combined_dataframe()
+                            # Add DUPLICATE_ACROSS_DIVISIONS column: TRUE for duplicates, empty for non-duplicates
+                            df["DUPLICATE_ACROSS_DIVISIONS"] = "TRUE" if is_duplicate else ""
+                            # Always reorder columns so DUPLICATE_ACROSS_DIVISIONS is last
+                            cols = list(df.columns)
+                            if "DUPLICATE_ACROSS_DIVISIONS" in cols:
+                                cols = [c for c in cols if c != "DUPLICATE_ACROSS_DIVISIONS"] + ["DUPLICATE_ACROSS_DIVISIONS"]
+                                df = df[cols]
+                            import os
+                            write_header = not os.path.exists(csv_path)
+                            if write_header:
+                                df.to_csv(csv_path, index=False, header=True, mode='w')
+                            else:
+                                import pandas as pd
+                                try:
+                                    existing = pd.read_csv(csv_path, nrows=0)
+                                    df = df[existing.columns.tolist()]
+                                except Exception:
+                                    pass
+                                df.to_csv(csv_path, index=False, header=False, mode='a')
                             scraped_games.append(game_data)
-                            self.visited_links.add(game_link)
+                            new_game_ids.add(game_data.game_id)
+                            # Retroactively update previous division files for this game_id
+                            for div, path in all_game_ids.get(game_data.game_id, {}).items():
+                                try:
+                                    import pandas as pd
+                                    # Try standard read, fallback to python engine if tokenization errors occur
+                                    try:
+                                        prev_df = pd.read_csv(path)
+                                    except Exception:
+                                        try:
+                                            prev_df = pd.read_csv(path, engine='python', sep=',', on_bad_lines='skip')
+                                        except Exception as e:
+                                            self.logger.warning(f"Could not parse previous CSV {path} for duplicate update: {e}")
+                                            continue
+
+                                    if "DUPLICATE_ACROSS_DIVISIONS" not in prev_df.columns:
+                                        prev_df["DUPLICATE_ACROSS_DIVISIONS"] = ""
+                                    # Ensure string dtype to avoid pandas dtype warnings when assigning 'TRUE'
+                                    # Replace NaN with empty string and ensure string dtype (avoids writing 'nan')
+                                    try:
+                                        prev_df["DUPLICATE_ACROSS_DIVISIONS"] = prev_df["DUPLICATE_ACROSS_DIVISIONS"].fillna("").astype(str)
+                                    except Exception:
+                                        prev_df["DUPLICATE_ACROSS_DIVISIONS"] = prev_df["DUPLICATE_ACROSS_DIVISIONS"].apply(lambda x: str(x) if not pd.isna(x) else "")
+                                    prev_df.loc[prev_df["GAMEID"] == game_data.game_id, "DUPLICATE_ACROSS_DIVISIONS"] = "TRUE"
+                                    # Always reorder columns so DUPLICATE_ACROSS_DIVISIONS is last
+                                    cols_prev = list(prev_df.columns)
+                                    if "DUPLICATE_ACROSS_DIVISIONS" in cols_prev:
+                                        cols_prev = [c for c in cols_prev if c != "DUPLICATE_ACROSS_DIVISIONS"] + ["DUPLICATE_ACROSS_DIVISIONS"]
+                                        prev_df = prev_df[cols_prev]
+                                    prev_df.to_csv(path, index=False)
+                                    self.logger.info(f"Marked duplicate {game_data.game_id} in previous file: {path}")
+                                    # Also update file in Google Drive if upload is enabled
+                                    if self.config.upload_to_gdrive and self.file_manager.file_exists_and_has_content(path):
+                                        try:
+                                            # Schedule upload after reconciliation completes
+                                            self.logger.info(f"Scheduling upload for updated file: {path}")
+                                            self.schedule_upload(path, year, month, gender, div)
+                                        except Exception as e:
+                                            self.logger.warning(f"Failed to schedule Google Drive upload for {path}: {e}")
+                                except Exception as e:
+                                    self.logger.warning(f"Unexpected error while updating previous CSV {path}: {e}")
+                            # Register this game_id for this division
+                            if game_data.game_id not in all_game_ids:
+                                all_game_ids[game_data.game_id] = {}
+                            all_game_ids[game_data.game_id][division] = csv_path
                     except Exception as e:
                         self.logger.error(f"Error scraping game {game_link}: {e}")
                         self.send_notification(
@@ -129,110 +192,211 @@ class NCAAScraper(BaseScraper):
                             game_link=game_link
                         )
                         continue
-                
-                # Upload to Google Drive if enabled
+                # Schedule upload to Google Drive if enabled (uploads will run after reconciliation)
                 if self.config.upload_to_gdrive and self.file_manager.file_exists_and_has_content(csv_path):
-                    self.logger.info(f"Uploading completed CSV for {gender} {division}: {csv_path}")
-                    self.upload_to_gdrive(csv_path, year, month, gender, division)
-                
+                    self.logger.info(f"Scheduling upload for completed CSV for {gender} {division}: {csv_path}")
+                    self.schedule_upload(csv_path, year, month, gender, division)
                 return scraped_games
-                
             finally:
                 if self.driver:
                     SeleniumUtils.safe_quit_driver(self.driver)
                     self.driver = None
-                    
         except Exception as e:
-            self.logger.error(f"Unexpected error in scrape method: {e}")
+            error_msg = f"Error in scrape(): {e}"
+            self.logger.error(error_msg)
             self.send_notification(
-                f"Unexpected error in scrape method: {e}",
-                ErrorType.ERROR,
-                division=components.get('division') if 'components' in locals() else None,
-                date=f"{components.get('year')}-{components.get('month')}-{components.get('day')}" if 'components' in locals() else None,
-                gender=components.get('gender') if 'components' in locals() else None
+                error_msg,
+                ErrorType.ERROR
             )
             return []
     
     def _load_scoreboard_page(self, url: str, division: str, gender: str, date: str) -> bool:
-        """Load the scoreboard page and check for errors."""
-        try:
-            self.logger.info(f"Loading scoreboard page: {url}")
-            
-            # Add human-like delay before loading
-            SeleniumUtils.human_like_delay(1.0, 2.0)
-            
-            self.driver.get(url)
-            
-            # Add another delay after page load
-            SeleniumUtils.human_like_delay(2.0, 4.0)
-            
-            # Wait for page to load
-            wait = WebDriverWait(self.driver, self.config.wait_timeout)
-            
+        """Load the scoreboard page and check for errors, with conditional retry."""
+        max_retries = 3
+        attempt = 0
+        while attempt < max_retries:
             try:
-                wait.until(EC.presence_of_element_located((By.CLASS_NAME, "gamePod-link")))
-                return True
-            except TimeoutException:
-                # Check for specific error pages
-                error_msg = SeleniumUtils.check_for_errors(self.driver)
-                if error_msg:
-                    self.logger.warning(f"{error_msg} for {url}")
+                self.logger.info(f"Loading scoreboard page: {url} (attempt {attempt + 1}/{max_retries})")
+                SeleniumUtils.human_like_delay(1.0, 2.0)
+                self.driver.get(url)
+                SeleniumUtils.human_like_delay(2.0, 4.0)
+                wait = WebDriverWait(self.driver, self.config.wait_timeout)
+                try:
+                    wait.until(EC.presence_of_element_located((By.CLASS_NAME, "gamePod-link")))
+                    return True
+                except TimeoutException:
+                    error_msg = SeleniumUtils.check_for_errors(self.driver)
+                    if error_msg:
+                        self.logger.warning(f"{error_msg} for {url}")
+                        self.send_notification(
+                            f"{error_msg} for {url}",
+                            ErrorType.WARNING,
+                            division=division,
+                            date=date,
+                            gender=gender
+                        )
+                        if "rate limit" in error_msg.lower():
+                            self.logger.warning("Rate limit exceeded, will NOT retry this link.")
+                            return False
+                        # Otherwise, retry after delay
+                        attempt += 1
+                        if attempt < max_retries:
+                            self.logger.info("Retrying after 15 seconds...")
+                            time.sleep(15)
+                        continue
+                    http_error = SeleniumUtils.check_http_status(self.driver)
+                    if http_error:
+                        self.logger.warning(f"{http_error} for {url}")
+                        self.send_notification(
+                            f"{http_error} for {url}",
+                            ErrorType.ERROR,
+                            division=division,
+                            date=date,
+                            gender=gender
+                        )
+                        attempt += 1
+                        if attempt < max_retries:
+                            self.logger.info("Retrying after 15 seconds...")
+                            time.sleep(15)
+                        continue
+                    no_games_msg = f"No games found on scoreboard page: {url}"
+                    self.logger.warning(no_games_msg)
                     self.send_notification(
-                        f"{error_msg} for {url}",
-                        ErrorType.WARNING,
+                        no_games_msg,
+                        ErrorType.INFO,
                         division=division,
                         date=date,
                         gender=gender
                     )
-                    return False
-                
-                # Check for HTTP errors
-                http_error = SeleniumUtils.check_http_status(self.driver)
-                if http_error:
-                    self.logger.warning(f"{http_error} for {url}")
-                    self.send_notification(
-                        f"{http_error} for {url}",
-                        ErrorType.ERROR,
-                        division=division,
-                        date=date,
-                        gender=gender
-                    )
-                    return False
-                
-                # No games found on scoreboard page - send notification
-                no_games_msg = f"No games found on scoreboard page: {url}"
-                self.logger.warning(no_games_msg)
+                    attempt += 1
+                    if attempt < max_retries:
+                        self.logger.info("Retrying after 15 seconds...")
+                        time.sleep(15)
+                    continue
+            except WebDriverException as e:
+                error_msg = f"Selenium WebDriver error loading scoreboard page {url}: {e}"
+                self.logger.error(error_msg)
                 self.send_notification(
-                    no_games_msg,
-                    ErrorType.INFO,
+                    error_msg,
+                    ErrorType.ERROR,
                     division=division,
                     date=date,
                     gender=gender
                 )
-                return False
-                
-        except WebDriverException as e:
-            error_msg = f"Selenium WebDriver error loading scoreboard page {url}: {e}"
-            self.logger.error(error_msg)
-            self.send_notification(
-                error_msg,
-                ErrorType.ERROR,
-                division=division,
-                date=date,
-                gender=gender
-            )
-            return False
+                attempt += 1
+                if attempt < max_retries:
+                    self.logger.info("Retrying after 15 seconds...")
+                    time.sleep(15)
+                continue
+            except Exception as e:
+                error_msg = f"Unexpected error loading scoreboard page {url}: {e}"
+                self.logger.error(error_msg)
+                self.send_notification(
+                    error_msg,
+                    ErrorType.ERROR,
+                    division=division,
+                    date=date,
+                    gender=gender
+                )
+                attempt += 1
+                if attempt < max_retries:
+                    self.logger.info("Retrying after 15 seconds...")
+                    time.sleep(15)
+                continue
+            break
+        return False
+
+    def reconcile_duplicates_for_date(self, year: str, month: str, day: str, gender: str) -> None:
+        """
+        Scan all division CSVs for the given date/gender, detect GAMEIDs present in more than
+        one division, mark DUPLICATE_ACROSS_DIVISIONS=TRUE in all affected files, and update
+        Google Drive copies if upload is enabled.
+
+        This runs after a scraping session to ensure duplicates are consistently marked.
+        """
+        try:
+            import pandas as pd
+            from pathlib import Path
+
+            base_dir = Path(self.file_manager.base_output_dir) / year / month / gender
+            if not base_dir.exists():
+                self.logger.info(f"No output for {year}-{month}-{day} {gender} to reconcile")
+                return
+
+            # Collect CSV files for divisions
+            csv_paths = []
+            for div_dir in base_dir.iterdir():
+                if div_dir.is_dir():
+                    csv_file = div_dir / f"basketball_{gender}_{div_dir.name}_{year}_{month}_{day}.csv"
+                    if csv_file.exists():
+                        csv_paths.append(csv_file)
+
+            if not csv_paths:
+                self.logger.info(f"No division CSVs found to reconcile for {year}-{month}-{day} {gender}")
+                return
+
+            # Read GAMEIDs from each file
+            gid_to_paths = {}
+            for p in csv_paths:
+                try:
+                    try:
+                        df = pd.read_csv(p)
+                    except Exception:
+                        df = pd.read_csv(p, engine='python', sep=',', on_bad_lines='skip')
+                    if 'GAMEID' in df.columns:
+                        for gid in df['GAMEID'].astype(str).unique():
+                            gid_to_paths.setdefault(gid, set()).add(p)
+                except Exception as e:
+                    self.logger.warning(f"Failed to read {p} during reconcile: {e}")
+                    continue
+
+            # Find duplicates
+            duplicate_gids = {gid for gid, paths in gid_to_paths.items() if len(paths) > 1}
+            if not duplicate_gids:
+                self.logger.info(f"No cross-division duplicates found for {year}-{month}-{day} {gender}")
+                return
+
+            # Update each file marking duplicates
+            for p in csv_paths:
+                try:
+                    try:
+                        df = pd.read_csv(p)
+                    except Exception:
+                        df = pd.read_csv(p, engine='python', sep=',', on_bad_lines='skip')
+
+                    if 'DUPLICATE_ACROSS_DIVISIONS' not in df.columns:
+                        df['DUPLICATE_ACROSS_DIVISIONS'] = ''
+                    # Ensure string dtype for the duplicate flag
+                    try:
+                        df['DUPLICATE_ACROSS_DIVISIONS'] = df['DUPLICATE_ACROSS_DIVISIONS'].fillna("").astype(str)
+                    except Exception:
+                        df['DUPLICATE_ACROSS_DIVISIONS'] = df['DUPLICATE_ACROSS_DIVISIONS'].apply(lambda x: str(x) if not pd.isna(x) else "")
+
+                    mask = df['GAMEID'].astype(str).isin(duplicate_gids)
+                    if mask.any():
+                        df.loc[mask, 'DUPLICATE_ACROSS_DIVISIONS'] = 'TRUE'
+                        # reorder column to put duplicate flag last
+                        cols = [c for c in df.columns if c != 'DUPLICATE_ACROSS_DIVISIONS'] + ['DUPLICATE_ACROSS_DIVISIONS']
+                        df = df[cols]
+                        df.to_csv(p, index=False)
+                        self.logger.info(f"Marked duplicates in {p}")
+                        # update gdrive if enabled
+                        if self.config.upload_to_gdrive:
+                            # derive division from parent folder name and schedule upload
+                            division = p.parent.name
+                            try:
+                                self.logger.info(f"Scheduling upload for reconciled file: {p}")
+                                self.schedule_upload(str(p), year, month, gender, division)
+                            except Exception as e:
+                                self.logger.warning(f"Failed to schedule Google Drive upload for {p}: {e}")
+                except Exception as e:
+                    self.logger.warning(f"Failed to update file {p} during reconcile: {e}")
+                    continue
+
+            self.logger.info(f"Reconcile complete: marked {len(duplicate_gids)} duplicate GAMEIDs for {year}-{month}-{day} {gender}")
         except Exception as e:
-            error_msg = f"Unexpected error loading scoreboard page {url}: {e}"
-            self.logger.error(error_msg)
-            self.send_notification(
-                error_msg,
-                ErrorType.ERROR,
-                division=division,
-                date=date,
-                gender=gender
-            )
-            return False
+            self.logger.error(f"Error during reconcile_duplicates_for_date: {e}")
+            return
     
     def _extract_game_links(self) -> List[str]:
         """Extract game links from the scoreboard page."""
@@ -275,10 +439,7 @@ class NCAAScraper(BaseScraper):
             self.logger.info(f"Game {game_id} already exists in {csv_path}, skipping...")
             return None
         
-        # Check if already visited in this session
-        if game_link in self.visited_links:
-            self.logger.info(f"Game link {game_link} already visited in this session, skipping...")
-            return None
+        # ...existing code...
         
         self.logger.info(f"Scraping: {game_link}")
         

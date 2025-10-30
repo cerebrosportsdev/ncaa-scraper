@@ -26,6 +26,50 @@ class BaseScraper(ABC):
         self.csv_handler = CSVHandler(self.file_manager)
         self.google_drive = GoogleDriveManager(config)
         self.notifier = DiscordNotifier(config.discord_webhook_url)
+        # pending uploads scheduled during scraping/reconcile; each item is (file_path, year, month, gender, division)
+        self._pending_uploads = []
+
+    def schedule_upload(self, file_path: str, year: str, month: str, gender: str, division: str) -> None:
+        """Schedule a file to be uploaded to Google Drive after reconciliation completes.
+
+        This avoids uploading partial or out-of-order files during scraping.
+        """
+        entry = (file_path, year, month, gender, division)
+        if entry not in self._pending_uploads:
+            self._pending_uploads.append(entry)
+            self.logger.debug(f"Scheduled upload: {file_path}")
+
+    def flush_scheduled_uploads(self) -> None:
+        """Upload all scheduled files to Google Drive, grouping by their target folders.
+
+        This method is safe to call even if uploads are disabled in config.
+        """
+        if not self._pending_uploads:
+            return
+        if not self.config.upload_to_gdrive:
+            self.logger.info("Upload to Google Drive is disabled; clearing scheduled uploads.")
+            self._pending_uploads = []
+            return
+
+        # Upload each scheduled file to its respective folder
+        for file_path, year, month, gender, division in list(self._pending_uploads):
+            try:
+                self.logger.info(f"Preparing to upload {file_path} to Google Drive...")
+                folder_id = self.google_drive.create_folder_structure(
+                    year, month, gender, division, self.config.google_drive_folder_id
+                )
+                if not folder_id:
+                    self.logger.error(f"Failed to create/find Google Drive folder for {file_path}")
+                    continue
+                # Use upload_file which will create or update as needed
+                self.google_drive.upload_file(file_path, folder_id, overwrite=True)
+            except Exception as e:
+                self.logger.error(f"Error uploading scheduled file {file_path}: {e}")
+            finally:
+                try:
+                    self._pending_uploads.remove((file_path, year, month, gender, division))
+                except ValueError:
+                    pass
     
     @abstractmethod
     def scrape(self, url: str) -> List[GameData]:

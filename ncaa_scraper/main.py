@@ -131,6 +131,34 @@ def _run_scraping_session(scraper: NCAAScraper, scraping_config: ScrapingConfig)
             logger.error(f"Error processing URL {url}: {e}")
             continue
 
+    # After scraping all URLs in this session, reconcile duplicates across divisions
+    try:
+        from datetime import timedelta
+        start_date = scraping_config.date_range.start_date
+        end_date = scraping_config.date_range.end_date or scraping_config.date_range.start_date
+        current = start_date
+        while current <= end_date:
+            year = str(current.year)
+            month = f"{current.month:02d}"
+            day = f"{current.day:02d}"
+            for g in scraping_config.genders:
+                # g may be an Enum; use its value if present
+                gender_value = g.value if hasattr(g, 'value') else str(g)
+                logger.info(f"Reconciling duplicates for {year}-{month}-{day} {gender_value}")
+                try:
+                    scraper.reconcile_duplicates_for_date(year, month, day, gender_value)
+                except Exception as e:
+                    logger.warning(f"Failed to reconcile duplicates for {year}-{month}-{day} {gender_value}: {e}")
+            current += timedelta(days=1)
+        # After reconciliation completes for all dates/genders, flush any scheduled uploads
+        try:
+            logger.info("Flushing scheduled Google Drive uploads...")
+            scraper.flush_scheduled_uploads()
+        except Exception as e:
+            logger.warning(f"Failed to flush scheduled uploads: {e}")
+    except Exception as e:
+        logger.warning(f"Error during post-scrape duplicate reconciliation: {e}")
+
 
 def _precheck_google_drive(scraper: NCAAScraper, urls: List[str]):
     """Pre-check Google Drive for existing files to provide summary."""

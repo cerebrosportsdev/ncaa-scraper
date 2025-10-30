@@ -17,6 +17,24 @@ logger = logging.getLogger(__name__)
 
 
 class GoogleDriveManager:
+    def delete_file_from_gdrive(self, file_id: str) -> bool:
+        """
+        Delete a file from Google Drive by its file ID.
+        Args:
+            file_id: The Google Drive file ID to delete
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            if not self.service:
+                if not self.authenticate():
+                    return False
+            self.service.files().delete(fileId=file_id, supportsAllDrives=True).execute()
+            logger.info(f"Deleted file from Google Drive: {file_id}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to delete file from Google Drive: {e}")
+            return False
     """Manages Google Drive operations for the scraper."""
     
     def __init__(self, config):
@@ -215,54 +233,86 @@ class GoogleDriveManager:
             if not self.service:
                 if not self.authenticate():
                     return None
-            
-            file_name = os.path.basename(file_path)
-            
+
             if not os.path.exists(file_path):
                 logger.error(f"Local file {file_path} does not exist")
                 return None
-            
-            # Check if file should be uploaded (intelligent duplicate detection)
+
+            file_name = os.path.basename(file_path)
+
+            # Decide whether we should upload or update
             if not overwrite:
                 should_upload, existing_file_id = self.should_upload_file(file_path, folder_id)
                 if not should_upload:
                     return existing_file_id
             else:
                 existing_file_id = self.file_exists(file_name, folder_id)
-            
-            file_metadata = {
-                'name': file_name,
-            }
-            
+
+            # If an existing file is found and overwrite requested, call update_file which does NOT write parents
+            if existing_file_id and overwrite:
+                updated_id = self.update_file(existing_file_id, file_path)
+                if updated_id:
+                    logger.info(f"Successfully updated {file_path} in Google Drive. File ID: {updated_id}")
+                return updated_id
+
+            # If an existing file was found but overwrite not requested, create behavior handled earlier by should_upload
+            if existing_file_id and not overwrite:
+                # should_upload was True above, so proceed to update
+                updated_id = self.update_file(existing_file_id, file_path)
+                if updated_id:
+                    logger.info(f"Successfully updated {file_path} in Google Drive. File ID: {updated_id}")
+                return updated_id
+
+            # No existing file -> create new file (include parents here)
+            media = MediaFileUpload(file_path, resumable=True)
+            file_metadata = {'name': file_name}
             if folder_id:
                 file_metadata['parents'] = [folder_id]
-            
-            media = MediaFileUpload(file_path, resumable=True)
-            
-            if existing_file_id:
-                # Update existing file
-                file = self.service.files().update(
-                    fileId=existing_file_id,
-                    body=file_metadata,
-                    media_body=media,
-                    fields='id',
-                    supportsAllDrives=True
-                ).execute()
-                logger.info(f"Successfully updated {file_path} in Google Drive. File ID: {file.get('id')}")
-            else:
-                # Create new file
-                file = self.service.files().create(
-                    body=file_metadata,
-                    media_body=media,
-                    fields='id',
-                    supportsAllDrives=True
-                ).execute()
-                logger.info(f"Successfully uploaded {file_path} to Google Drive. File ID: {file.get('id')}")
-            
+
+            file = self.service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id',
+                supportsAllDrives=True
+            ).execute()
+            logger.info(f"Successfully uploaded {file_path} to Google Drive. File ID: {file.get('id')}")
             return file.get('id')
-            
+
         except Exception as e:
             logger.error(f"Failed to upload {file_path} to Google Drive: {e}")
+            return None
+
+    def create_file(self, local_path: str, parent_id: Optional[str] = None) -> Optional[str]:
+        """Create a new file in Drive under parent_id. Returns file id or None on failure."""
+        try:
+            if not self.service:
+                if not self.authenticate():
+                    return None
+            name = os.path.basename(local_path)
+            media = MediaFileUpload(local_path, resumable=True)
+            body = {'name': name}
+            if parent_id:
+                body['parents'] = [parent_id]
+            file = self.service.files().create(body=body, media_body=media, supportsAllDrives=True, fields='id').execute()
+            return file.get('id')
+        except Exception as e:
+            logger.error(f"Google Drive create error for {local_path}: {e}")
+            return None
+
+    def update_file(self, file_id: str, local_path: str) -> Optional[str]:
+        """Update content of an existing Drive file. Important: do NOT include 'parents' in the update body.
+
+        Returns file id on success or None on failure.
+        """
+        try:
+            if not self.service:
+                if not self.authenticate():
+                    return None
+            media = MediaFileUpload(local_path, resumable=True)
+            file = self.service.files().update(fileId=file_id, media_body=media, supportsAllDrives=True, fields='id').execute()
+            return file.get('id')
+        except Exception as e:
+            logger.error(f"Google Drive update error for {local_path} (fileId={file_id}): {e}")
             return None
     
     def create_folder(self, folder_name: str, parent_folder_id: Optional[str] = None) -> Optional[str]:
