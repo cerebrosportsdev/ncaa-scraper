@@ -1,0 +1,63 @@
+name: Daily NCAA Scrape
+
+on:
+  schedule:
+    # Runs daily at 12:30 AM UTC
+    - cron: '30 0 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install system dependencies (Chromium + driver)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y chromium-browser chromium-chromedriver xvfb
+
+      - name: Expose Chromium to environment
+        run: echo "CHROME_BIN=/usr/bin/chromium-browser" >> $GITHUB_ENV
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install Python dependencies
+        run: python -m pip install --upgrade pip && pip install -r requirements.txt
+
+      - name: Run scraper for yesterday's date only
+        env:
+          # Provide Google Drive credentials via repository secrets. Two options supported by the code:
+          # 1) Base64-encoded service account JSON: set secret GOOGLE_CREDENTIALS_JSON_B64
+          # 2) Service-account JSON file in repo (not recommended) or GOOGLE_CREDENTIALS_FILE path
+          GOOGLE_CREDENTIALS_JSON_B64: ${{ secrets.GOOGLE_CREDENTIALS_JSON_B64 }}
+          GOOGLE_CREDENTIALS_FILE: ${{ secrets.GOOGLE_CREDENTIALS_FILE }}
+          # Optional: target folder id for Drive uploads
+          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          # Pass through any other secrets you use (discord webhook, etc.)
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          # Run scraper for yesterday only
+          DATE=$(date -u -d "-1 day" +%Y/%m/%d)
+          echo "Running scraper for date (yesterday): $DATE"
+          python main.py --date "$DATE" --genders women --divisions d1 d2 d3 --upload-gdrive
+
+      - name: Upload scraped CSVs as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: scraped-data-${{ github.run_id }}
+          path: scraped_data/**
+          retention-days: 30
