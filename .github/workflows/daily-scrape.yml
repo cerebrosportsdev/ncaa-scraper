@@ -2,8 +2,8 @@ name: Daily NCAA Scrape
 
 on:
   schedule:
-    # Runs daily at 12:30 AM UTC
-    - cron: '30 0 * * *'
+    # Runs daily at 12:30 AM PST (8:30 AM UTC)
+    - cron: '30 8 * * *'
   workflow_dispatch: {}
 
 jobs:
